@@ -1,0 +1,16 @@
+{
+  "name": "auto-chess-arena-shared",
+  "version": "0.1.0",
+  "description": "Shared types and constants for Auto Chess Arena",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.2"
+  }
+}

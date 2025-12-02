@@ -1,0 +1,136 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+
+.app-header {
+  padding: 2rem;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 2px solid #0f3460;
+}
+
+.app-header h1 {
+  font-size: 3rem;
+  background: linear-gradient(90deg, #00d4ff 0%, #7b68ee 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 0.5rem;
+}
+
+.status {
+  font-size: 1.2rem;
+  margin-top: 0.5rem;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.welcome-screen {
+  max-width: 800px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.welcome-screen h2 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+  color: #00d4ff;
+}
+
+.welcome-screen p {
+  font-size: 1.3rem;
+  color: #b4b4b4;
+  margin-bottom: 2rem;
+}
+
+.game-info {
+  margin: 2rem 0;
+  text-align: left;
+}
+
+.game-info h3 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: #7b68ee;
+}
+
+.game-info ul {
+  list-style: none;
+  padding: 0;
+}
+
+.game-info li {
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  background: rgba(0, 212, 255, 0.1);
+  border-left: 3px solid #00d4ff;
+  border-radius: 5px;
+}
+
+.btn-primary {
+  padding: 1rem 3rem;
+  font-size: 1.3rem;
+  font-weight: bold;
+  color: white;
+  background: linear-gradient(90deg, #00d4ff 0%, #7b68ee 100%);
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  margin: 2rem 0;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 212, 255, 0.3);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.tech-stack {
+  margin-top: 3rem;
+}
+
+.tech-stack h4 {
+  font-size: 1.2rem;
+  margin-bottom: 1rem;
+  color: #b4b4b4;
+}
+
+.tech-badges {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.badge {
+  padding: 0.5rem 1.5rem;
+  background: rgba(123, 104, 238, 0.2);
+  border: 1px solid #7b68ee;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  color: #7b68ee;
+}
+
+.app-footer {
+  padding: 1rem;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: #666;
+}

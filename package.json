@@ -1,0 +1,30 @@
+{
+  "name": "auto-chess-arena",
+  "version": "0.1.0",
+  "private": true,
+  "description": "8-player auto chess multiplayer game",
+  "scripts": {
+    "install:all": "npm install && cd client && npm install && cd ../server && npm install && cd ../shared && npm install && cd ..",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:client": "cd client && npm run dev",
+    "dev:server": "cd server && npm run dev",
+    "build": "npm run build:shared && npm run build:server && npm run build:client",
+    "build:client": "cd client && npm run build",
+    "build:server": "cd server && npm run build",
+    "build:shared": "cd shared && npm run build",
+    "lint": "npm run lint:client && npm run lint:server",
+    "lint:client": "cd client && npm run lint",
+    "lint:server": "cd server && npm run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "type-check": "npm run type-check:client && npm run type-check:server && npm run type-check:shared",
+    "type-check:client": "cd client && npm run type-check",
+    "type-check:server": "cd server && npm run type-check",
+    "type-check:shared": "cd shared && npm run type-check",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
