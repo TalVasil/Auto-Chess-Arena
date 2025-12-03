@@ -1,0 +1,85 @@
+.arena-container {
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  margin: 0;
+}
+
+.arena-container h2 {
+  margin: 0 0 8px 0;
+  color: #fff;
+  text-align: center;
+  font-size: 1.2rem;
+}
+
+.arena-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 50px);
+  grid-template-rows: repeat(8, 50px);
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 8px;
+  border-radius: 4px;
+  margin: 0 auto;
+  width: fit-content;
+}
+
+.arena-cell {
+  width: 50px;
+  height: 50px;
+  background: rgba(50, 50, 70, 0.6);
+  border: 2px solid rgba(100, 100, 120, 0.8);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-size: 1.2rem;
+}
+
+.arena-cell:hover {
+  background: rgba(70, 70, 90, 0.8);
+  border-color: rgba(150, 150, 180, 1);
+  cursor: pointer;
+}
+
+/* Player side (bottom 4 rows) - greenish tint */
+.arena-cell-player {
+  background: rgba(50, 80, 50, 0.6);
+  border-color: rgba(100, 180, 100, 0.8);
+}
+
+.arena-cell-player:hover {
+  background: rgba(70, 110, 70, 0.8);
+  border-color: rgba(120, 220, 120, 1);
+}
+
+/* Opponent side (top 4 rows) - reddish/gray tint */
+.arena-cell-opponent {
+  background: rgba(70, 50, 50, 0.6);
+  border-color: rgba(140, 100, 100, 0.8);
+}
+
+.arena-cell-opponent:hover {
+  background: rgba(90, 70, 70, 0.8);
+  border-color: rgba(180, 120, 120, 1);
+}
+
+/* Neutral middle row - yellow/gold tint */
+.arena-cell-neutral {
+  background: rgba(80, 80, 50, 0.6);
+  border-color: rgba(180, 180, 100, 0.8);
+}
+
+.arena-cell-neutral:hover {
+  background: rgba(110, 110, 70, 0.8);
+  border-color: rgba(220, 220, 120, 1);
+}
+
+/* Selected arena cell - cyan glow like bench */
+.arena-cell-selected {
+  border-color: #00ffff !important;
+  border-width: 3px;
+  background: rgba(0, 255, 255, 0.3) !important;
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.6), inset 0 0 10px rgba(0, 255, 255, 0.3);
+}

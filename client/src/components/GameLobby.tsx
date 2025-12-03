@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Box, Heading, Text, Badge, Button, Grid, VStack, HStack } from '@chakra-ui/react';
 import { useGameStore } from '../store/gameStore';
 import { gameClient } from '../network/GameClient';
+import { GamePlay } from './GamePlay';
 import styles from './GameLobby.module.css';
 
 export function GameLobby() {
@@ -55,45 +56,52 @@ export function GameLobby() {
 
   return (
     <Box minH="100vh" bgGradient="linear(135deg, #1a1a2e 0%, #16213e 100%)" color="white" p={8}>
-      {/* Header */}
-      <VStack spacing={4} mb={8} pb={4} borderBottom="2px solid" borderColor="rgba(0, 212, 255, 0.3)">
-        <HStack w="100%" justify="space-between">
-          <Box />
-          <Heading
-            size="2xl"
-            bgGradient="linear(to-r, #00d4ff, #7b68ee)"
-            bgClip="text"
-          >
-            Auto Chess Arena - Lobby
-          </Heading>
-          <Button
-            variant="ghost"
-            color="red.400"
-            _hover={{ bg: 'rgba(255, 0, 0, 0.1)', color: 'red.300' }}
-            onClick={logout}
-          >
-            Logout
-          </Button>
-        </HStack>
+      {/* Header - only show in lobby */}
+      {phase === 'WAITING' && (
+        <VStack spacing={4} mb={8} pb={4} borderBottom="2px solid" borderColor="rgba(0, 212, 255, 0.3)">
+          <HStack w="100%" justify="space-between">
+            <Box />
+            <Heading
+              size="2xl"
+              bgGradient="linear(to-r, #00d4ff, #7b68ee)"
+              bgClip="text"
+            >
+              Auto Chess Arena - Lobby
+            </Heading>
+            <Button
+              variant="ghost"
+              color="red.400"
+              _hover={{ bg: 'rgba(255, 0, 0, 0.1)', color: 'red.300' }}
+              onClick={logout}
+            >
+              Logout
+            </Button>
+          </HStack>
 
-        {displayName && (
-          <Text fontSize="md" color="gray.400">
-            Logged in as: <Text as="span" color="#00d4ff" fontWeight="bold">{displayName}</Text>
-          </Text>
-        )}
+          {displayName && (
+            <Text fontSize="md" color="gray.400">
+              Logged in as: <Text as="span" color="#00d4ff" fontWeight="bold">{displayName}</Text>
+            </Text>
+          )}
 
-        <HStack spacing={2}>
-          <Text fontSize="xl">{status.icon}</Text>
-          <Text fontSize="lg" fontWeight="bold" color={status.color}>
-            {status.text}
-          </Text>
-        </HStack>
-      </VStack>
+          <HStack spacing={2}>
+            <Text fontSize="xl">{status.icon}</Text>
+            <Text fontSize="lg" fontWeight="bold" color={status.color}>
+              {status.text}
+            </Text>
+          </HStack>
+        </VStack>
+      )}
 
       {isConnected ? (
-        <VStack spacing={8} maxW="1200px" mx="auto">
-          {/* Players Panel */}
-          <Box
+        phase !== 'WAITING' ? (
+          // Game has started - show GamePlay component
+          <GamePlay />
+        ) : (
+          // Still in lobby - show player list and ready button
+          <VStack spacing={8} maxW="1200px" mx="auto">
+            {/* Players Panel */}
+            <Box
             w="100%"
             bg="rgba(255, 255, 255, 0.05)"
             borderColor="rgba(0, 212, 255, 0.3)"
@@ -183,7 +191,8 @@ export function GameLobby() {
               </Text>
             </VStack>
           )}
-        </VStack>
+          </VStack>
+        )
       ) : (
         <VStack spacing={4} textAlign="center" py={16}>
           <Text fontSize="4xl" className={styles.loadingSpinner}>🔄</Text>

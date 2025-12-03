@@ -16,6 +16,13 @@ export interface Character {
   stars: number;
 }
 
+// Board position interface
+export interface BoardPosition {
+  row: number;
+  col: number;
+  character?: Character;
+}
+
 // Player interface matching server schema
 export interface Player {
   id: string;
@@ -28,6 +35,7 @@ export interface Player {
   isEliminated: boolean;
   bench: Character[];
   shopCharacterIds: string[];
+  board: BoardPosition[];
 }
 
 // Game state interface
@@ -211,6 +219,24 @@ export const useGameStore = create<GameStoreState>()(
             shopCharacterIds.push(id);
           });
 
+          const board: BoardPosition[] = [];
+          player.board?.forEach((pos: any) => {
+            board.push({
+              row: pos.row,
+              col: pos.col,
+              character: pos.character ? {
+                id: pos.character.id,
+                name: pos.character.name,
+                cost: pos.character.cost,
+                rarity: pos.character.rarity,
+                attack: pos.character.attack,
+                defense: pos.character.defense,
+                hp: pos.character.hp,
+                stars: pos.character.stars,
+              } : undefined,
+            });
+          });
+
           playersArray.push({
             id: player.id,
             username: player.username,
@@ -222,6 +248,7 @@ export const useGameStore = create<GameStoreState>()(
             isEliminated: player.isEliminated,
             bench,
             shopCharacterIds,
+            board,
           });
         });
 

@@ -5,16 +5,21 @@ import './Shop.css';
 interface ShopProps {
   characters: ICharacter[];
   playerGold: number;
+  phase: string;
   onBuy: (characterId: string) => void;
 }
 
-export function Shop({ characters, playerGold, onBuy }: ShopProps) {
+export function Shop({ characters, playerGold, phase, onBuy }: ShopProps) {
   const handleBuy = (character: ICharacter) => {
     if (playerGold >= character.cost) {
       onBuy(character.id);
       // Send message to server
       gameClient.send('buy_character', { characterId: character.id });
     }
+  };
+
+  const handleReroll = () => {
+    gameClient.send('reroll_shop');
   };
 
   const getRarityColor = (rarity: string): string => {
@@ -36,15 +41,24 @@ export function Shop({ characters, playerGold, onBuy }: ShopProps) {
 
   return (
     <div className="shop">
-      <div className="shop-header">
-        <h2>🛒 Shop</h2>
-        <div className="shop-gold">
-          <span className="gold-icon">💰</span>
-          <span className="gold-amount">{playerGold}g</span>
+      <div className="shop-content">
+        <div className="shop-sidebar">
+          <h2>🛒 Shop</h2>
+          <div className="shop-actions">
+            <button
+              className="shop-action-btn"
+              disabled={playerGold < 2}
+              onClick={handleReroll}
+            >
+              🔄 Reroll<br/>(2g)
+            </button>
+            <button className="shop-action-btn" disabled>
+              ⭐ Buy XP<br/>(4g)
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div className="shop-characters">
+        <div className="shop-characters">
         {characters.map((character) => {
           const canAfford = playerGold >= character.cost;
 
@@ -54,12 +68,9 @@ export function Shop({ characters, playerGold, onBuy }: ShopProps) {
               className={`character-card ${!canAfford ? 'disabled' : ''}`}
               style={{
                 borderColor: getRarityColor(character.rarity),
+                backgroundImage: `url('/characters/${character.id}.png')`,
               }}
             >
-              <div className="character-image-placeholder">
-                <span className="character-icon">⚔️</span>
-              </div>
-
               <div className="character-info">
                 <div
                   className="character-name"
@@ -79,7 +90,9 @@ export function Shop({ characters, playerGold, onBuy }: ShopProps) {
                     ❤️ {character.hp}
                   </span>
                 </div>
+              </div>
 
+              <div className="character-footer">
                 {character.abilities.length > 0 && (
                   <div className="character-ability">
                     <span className="ability-name">
@@ -87,28 +100,20 @@ export function Shop({ characters, playerGold, onBuy }: ShopProps) {
                     </span>
                   </div>
                 )}
-              </div>
 
-              <button
-                className={`buy-button ${!canAfford ? 'disabled' : ''}`}
-                onClick={() => handleBuy(character)}
-                disabled={!canAfford}
-              >
-                <span className="buy-cost">{character.cost}g</span>
-                <span className="buy-text">Buy</span>
-              </button>
+                <button
+                  className={`buy-button ${!canAfford ? 'disabled' : ''}`}
+                  onClick={() => handleBuy(character)}
+                  disabled={!canAfford}
+                >
+                  <span className="buy-cost">{character.cost}g</span>
+                  <span className="buy-text">Buy</span>
+                </button>
+              </div>
             </div>
           );
         })}
-      </div>
-
-      <div className="shop-actions">
-        <button className="shop-action-btn" disabled>
-          🔄 Reroll (2g)
-        </button>
-        <button className="shop-action-btn" disabled>
-          ⭐ Buy XP (4g)
-        </button>
+        </div>
       </div>
     </div>
   );

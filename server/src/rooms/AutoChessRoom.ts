@@ -1,12 +1,14 @@
 import colyseus from 'colyseus';
 const { Room } = colyseus;
 import type { Client } from 'colyseus';
-import { GameState, Character } from '../schema/GameState.js';
+import { GameState, Character, BoardPosition } from '../schema/GameState.js';
 import { CHARACTERS } from '../../../shared/src/constants/characterData.js';
 import { AuthService } from '../services/AuthService.js';
 
 export class AutoChessRoom extends Room<GameState> {
   maxClients = 8;
+  private elapsedTime: number = 0; // Accumulator for timer countdown
+  private timerPaused: boolean = false; // Debug flag to pause timer
 
   onCreate(options: any) {
     console.log('AutoChessRoom created!', options);
@@ -93,6 +95,352 @@ export class AutoChessRoom extends Room<GameState> {
         this.startGame();
       }
     });
+
+    // Sell character from bench - refunds gold
+    this.onMessage('sell_character', (client, message: { benchIndex: number }) => {
+      const player = this.state.players.get(client.sessionId);
+
+      if (!player) {
+        console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      const { benchIndex } = message;
+
+      // Validate bench index
+      if (benchIndex < 0 || benchIndex >= player.bench.length) {
+        console.log(`⚠️ Invalid bench index: ${benchIndex}`);
+        client.send('error', { message: 'Invalid bench position' });
+        return;
+      }
+
+      const character = player.bench[benchIndex];
+
+      if (!character) {
+        console.log(`⚠️ No character at bench index ${benchIndex}`);
+        client.send('error', { message: 'No character at this position' });
+        return;
+      }
+
+      // Refund gold (full cost)
+      const refundAmount = character.cost;
+      player.gold += refundAmount;
+
+      // Remove character from bench
+      player.bench.splice(benchIndex, 1);
+
+      console.log(`💰 Player ${player.username} sold ${character.name} for ${refundAmount} gold. Total gold: ${player.gold}`);
+    });
+
+    // Reroll shop - costs 2 gold
+    this.onMessage('reroll_shop', (client) => {
+      const player = this.state.players.get(client.sessionId);
+
+      if (!player) {
+        console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      const rerollCost = 2;
+
+      // Check if player has enough gold
+      if (player.gold < rerollCost) {
+        console.log(`⚠️ Player ${player.username} doesn't have enough gold to reroll (has ${player.gold}, needs ${rerollCost})`);
+        client.send('error', { message: 'Not enough gold to reroll' });
+        return;
+      }
+
+      // Deduct gold
+      player.gold -= rerollCost;
+
+      // Regenerate shop
+      const characterIds = CHARACTERS.map(c => c.id);
+      this.state.generateShopForPlayer(client.sessionId, characterIds);
+
+      console.log(`🔄 Player ${player.username} rerolled shop for ${rerollCost} gold. Remaining gold: ${player.gold}`);
+    });
+
+    // Place character from bench to board
+    this.onMessage('place_character', (client, message: { benchIndex: number, row: number, col: number }) => {
+      const player = this.state.players.get(client.sessionId);
+
+      if (!player) {
+        console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      // Only allow placement during PREPARATION phase
+      if (this.state.phase !== 'PREPARATION') {
+        console.log(`⚠️ Player ${player.username} tried to place character during ${this.state.phase} phase`);
+        client.send('error', { message: 'You can only place characters during preparation phase' });
+        return;
+      }
+
+      const { benchIndex, row, col } = message;
+
+      // Validate player can only place in their side (right 4 columns: col 5-8)
+      if (col < 5 || col > 8) {
+        console.log(`⚠️ Player ${player.username} tried to place character in invalid column ${col}. Must be 5-8 (player side).`);
+        client.send('error', { message: 'You can only place characters on your side (green area)' });
+        return;
+      }
+
+      // Validate row (0-7)
+      if (row < 0 || row > 7) {
+        console.log(`⚠️ Invalid row ${row}`);
+        return;
+      }
+
+      // Validate bench index
+      if (benchIndex < 0 || benchIndex >= player.bench.length) {
+        console.error(`❌ Invalid bench index: ${benchIndex}`);
+        return;
+      }
+
+      const character = player.bench[benchIndex];
+      if (!character) {
+        console.error(`❌ No character at bench index ${benchIndex}`);
+        return;
+      }
+
+      // Check if position is already occupied
+      const existingPos = player.board.find(pos => pos.row === row && pos.col === col);
+      if (existingPos) {
+        console.log(`⚠️ Position (${row}, ${col}) already occupied`);
+        return;
+      }
+
+      // Add character to board
+      const boardPos = new BoardPosition();
+      boardPos.row = row;
+      boardPos.col = col;
+      boardPos.character = character;
+      player.board.push(boardPos);
+
+      // Remove from bench
+      player.bench.splice(benchIndex, 1);
+
+      console.log(`✅ Player ${player.username} placed ${character.name} at (${row}, ${col})`);
+    });
+
+    // Swap two characters on bench or move character to specific bench slot
+    this.onMessage('swap_bench', (client, message: { fromIndex: number, toIndex: number }) => {
+      const player = this.state.players.get(client.sessionId);
+
+      if (!player) {
+        console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      const { fromIndex, toIndex } = message;
+
+      // Validate indices
+      if (fromIndex < 0 || fromIndex >= 10 || toIndex < 0 || toIndex >= 10) {
+        console.log(`⚠️ Invalid bench indices: ${fromIndex}, ${toIndex}`);
+        return;
+      }
+
+      const fromChar = player.bench[fromIndex];
+      const toChar = player.bench[toIndex];
+
+      if (!fromChar) {
+        console.log(`⚠️ No character at source bench index ${fromIndex}`);
+        return;
+      }
+
+      // If target slot is empty, just move the character
+      if (!toChar) {
+        // Remove from source
+        player.bench.splice(fromIndex, 1);
+        // Insert at target position
+        player.bench.splice(toIndex, 0, fromChar);
+        console.log(`✅ Player ${player.username} moved ${fromChar.name} from bench[${fromIndex}] to bench[${toIndex}]`);
+      } else {
+        // Swap the two characters
+        player.bench[fromIndex] = toChar;
+        player.bench[toIndex] = fromChar;
+        console.log(`✅ Player ${player.username} swapped ${fromChar.name} ↔️ ${toChar.name}`);
+      }
+    });
+
+    // Move character from board back to bench (with optional target slot)
+    this.onMessage('remove_from_board', (client, message: { row: number, col: number, targetBenchIndex?: number }) => {
+      const player = this.state.players.get(client.sessionId);
+
+      if (!player) {
+        console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      // Only allow removal during PREPARATION phase
+      if (this.state.phase !== 'PREPARATION') {
+        console.log(`⚠️ Player ${player.username} tried to remove character during ${this.state.phase} phase`);
+        client.send('error', { message: 'You can only move characters during preparation phase' });
+        return;
+      }
+
+      const { row, col, targetBenchIndex } = message;
+
+      // Find character at this position
+      const posIndex = player.board.findIndex(pos => pos.row === row && pos.col === col);
+      if (posIndex === -1) {
+        console.log(`⚠️ No character at position (${row}, ${col})`);
+        return;
+      }
+
+      const boardPos = player.board[posIndex];
+      if (!boardPos.character) {
+        console.log(`⚠️ No character at position (${row}, ${col})`);
+        return;
+      }
+
+      // Check if bench has space (max 10)
+      if (player.bench.length >= 10) {
+        console.log(`⚠️ Player ${player.username} bench is full`);
+        client.send('error', { message: 'Bench is full' });
+        return;
+      }
+
+      // Move character back to bench
+      if (targetBenchIndex !== undefined && targetBenchIndex >= 0 && targetBenchIndex <= player.bench.length) {
+        // Insert at specific position
+        player.bench.splice(targetBenchIndex, 0, boardPos.character);
+        console.log(`✅ Player ${player.username} moved ${boardPos.character.name} from board to bench[${targetBenchIndex}]`);
+      } else {
+        // Append to end
+        player.bench.push(boardPos.character);
+        console.log(`✅ Player ${player.username} moved ${boardPos.character.name} from board to bench`);
+      }
+
+      // Remove from board
+      player.board.splice(posIndex, 1);
+    });
+
+    // Move character between arena tiles
+    this.onMessage('move_on_board', (client, message: { fromRow: number, fromCol: number, toRow: number, toCol: number }) => {
+      const player = this.state.players.get(client.sessionId);
+
+      if (!player) {
+        console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      // Only allow movement during PREPARATION phase
+      if (this.state.phase !== 'PREPARATION') {
+        console.log(`⚠️ Player ${player.username} tried to move character during ${this.state.phase} phase`);
+        client.send('error', { message: 'You can only move characters during preparation phase' });
+        return;
+      }
+
+      const { fromRow, fromCol, toRow, toCol } = message;
+
+      // Validate target position is in player's side (col 5-8)
+      if (toCol < 5 || toCol > 8) {
+        console.log(`⚠️ Player ${player.username} tried to move to invalid column ${toCol}`);
+        return;
+      }
+
+      // Validate row
+      if (toRow < 0 || toRow > 7) {
+        console.log(`⚠️ Invalid row ${toRow}`);
+        return;
+      }
+
+      // Find character at source position
+      const sourcePosIndex = player.board.findIndex(pos => pos.row === fromRow && pos.col === fromCol);
+      if (sourcePosIndex === -1) {
+        console.log(`⚠️ No character at source position (${fromRow}, ${fromCol})`);
+        return;
+      }
+
+      const sourcePos = player.board[sourcePosIndex];
+      if (!sourcePos.character) {
+        console.log(`⚠️ No character at source position (${fromRow}, ${fromCol})`);
+        return;
+      }
+
+      // Check if target position is occupied
+      const targetPosIndex = player.board.findIndex(pos => pos.row === toRow && pos.col === toCol);
+      if (targetPosIndex !== -1) {
+        console.log(`⚠️ Target position (${toRow}, ${toCol}) already occupied`);
+        return;
+      }
+
+      // Move character to new position
+      sourcePos.row = toRow;
+      sourcePos.col = toCol;
+
+      console.log(`✅ Player ${player.username} moved ${sourcePos.character.name} from (${fromRow}, ${fromCol}) to (${toRow}, ${toCol})`);
+    });
+
+    // Debug: Toggle timer pause/resume
+    this.onMessage('debug_toggle_timer', (client) => {
+      this.timerPaused = !this.timerPaused;
+      console.log(`🔧 DEBUG: Timer ${this.timerPaused ? 'PAUSED' : 'RESUMED'} by ${client.sessionId}`);
+      this.broadcast('debug_message', { message: `Timer ${this.timerPaused ? 'paused' : 'resumed'}` });
+    });
+
+    // Debug: Toggle phase between PREPARATION and COMBAT
+    this.onMessage('debug_toggle_phase', (client) => {
+      if (this.state.phase === 'PREPARATION') {
+        this.state.phase = 'COMBAT';
+        this.state.timer = 30;
+        this.elapsedTime = 0;
+      } else if (this.state.phase === 'COMBAT') {
+        this.state.phase = 'PREPARATION';
+        this.state.timer = 30;
+        this.elapsedTime = 0;
+      }
+      console.log(`🔧 DEBUG: Phase toggled to ${this.state.phase} by ${client.sessionId}`);
+      this.broadcast('phase_changed', {
+        phase: this.state.phase,
+        roundNumber: this.state.roundNumber,
+        message: `DEBUG: Phase toggled to ${this.state.phase}`,
+      });
+    });
+
+    // Debug: Skip to next round
+    this.onMessage('debug_next_round', (client) => {
+      console.log(`🔧 DEBUG: Next round triggered by ${client.sessionId}`);
+
+      // Force phase transition
+      this.handlePhaseTransition();
+    });
+
+    // Debug: Reset game to round 1 preparation
+    this.onMessage('debug_reset_game', (client) => {
+      console.log(`🔧 DEBUG: Game reset by ${client.sessionId}`);
+
+      // Reset to round 1 preparation
+      this.state.phase = 'PREPARATION';
+      this.state.roundNumber = 1;
+      this.state.timer = 30;
+      this.elapsedTime = 0;
+      this.timerPaused = false;
+
+      // Reset all players
+      this.state.players.forEach((player, sessionId) => {
+        player.hp = 100;
+        player.gold = 11;
+        player.xp = 0;
+        player.level = 1;
+        player.isEliminated = false;
+
+        // Clear bench and board
+        player.bench.clear();
+        player.board.clear();
+
+        // Regenerate shop
+        const characterIds = CHARACTERS.map(c => c.id);
+        this.state.generateShopForPlayer(sessionId, characterIds);
+      });
+
+      this.broadcast('game_reset', {
+        message: 'Game has been reset!',
+        phase: this.state.phase,
+        roundNumber: this.state.roundNumber,
+      });
+    });
   }
 
   /**
@@ -171,11 +519,24 @@ export class AutoChessRoom extends Room<GameState> {
   }
 
   update(deltaTime: number) {
-    // Game loop - runs 20 times per second
-    // TODO: Implement game logic updates
-    // - Update timer
-    // - Check phase transitions
-    // - Simulate combat
+    // Game loop - runs 20 times per second (deltaTime in milliseconds)
+
+    // Only update timer during active phases (not WAITING or GAME_END) and if not paused
+    if ((this.state.phase === 'PREPARATION' || this.state.phase === 'COMBAT') && !this.timerPaused) {
+      // Accumulate time passed
+      this.elapsedTime += deltaTime;
+
+      // Every 1 second (1000ms), decrement timer
+      if (this.elapsedTime >= 1000) {
+        this.elapsedTime -= 1000;
+        this.state.timer--;
+
+        // Check if timer reached 0
+        if (this.state.timer <= 0) {
+          this.handlePhaseTransition();
+        }
+      }
+    }
   }
 
   // Check if all players are ready
@@ -200,6 +561,7 @@ export class AutoChessRoom extends Room<GameState> {
     this.state.phase = 'PREPARATION';
     this.state.roundNumber = 1;
     this.state.timer = 30;
+    this.elapsedTime = 0; // Reset timer accumulator
 
     // Reset all players' ready status
     this.state.players.forEach((player) => {
@@ -213,5 +575,50 @@ export class AutoChessRoom extends Room<GameState> {
     });
 
     console.log('✅ Game started successfully!');
+  }
+
+  // Handle phase transitions when timer reaches 0
+  handlePhaseTransition() {
+    console.log(`⏰ Timer expired! Current phase: ${this.state.phase}`);
+
+    if (this.state.phase === 'PREPARATION') {
+      // Transition from PREPARATION to COMBAT
+      this.state.phase = 'COMBAT';
+      this.state.timer = 30; // Combat phase duration (placeholder)
+      this.elapsedTime = 0;
+
+      console.log('⚔️ Starting COMBAT phase...');
+      this.broadcast('phase_changed', {
+        phase: 'COMBAT',
+        roundNumber: this.state.roundNumber,
+        message: 'Combat starting!',
+      });
+
+      // TODO: Simulate combat
+    } else if (this.state.phase === 'COMBAT') {
+      // Transition from COMBAT back to PREPARATION
+      this.state.roundNumber++;
+      this.state.phase = 'PREPARATION';
+      this.state.timer = 30;
+      this.elapsedTime = 0;
+
+      console.log(`🔄 Round ${this.state.roundNumber} - PREPARATION phase`);
+      this.broadcast('phase_changed', {
+        phase: 'PREPARATION',
+        roundNumber: this.state.roundNumber,
+        message: `Round ${this.state.roundNumber} - Prepare your team!`,
+      });
+
+      // Give income and regenerate shops for all players
+      this.state.players.forEach((player, sessionId) => {
+        // Grant 5 gold income each round
+        player.gold += 5;
+        console.log(`💰 Player ${player.username} received 5 gold (total: ${player.gold})`);
+
+        // Regenerate shop
+        const characterIds = CHARACTERS.map(c => c.id);
+        this.state.generateShopForPlayer(sessionId, characterIds);
+      });
+    }
   }
 }

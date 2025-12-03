@@ -18,6 +18,12 @@ export class Character extends Schema {
   @type('number') stars: number = 1;
 }
 
+export class BoardPosition extends Schema {
+  @type('number') row: number = 0;
+  @type('number') col: number = 0;
+  @type(Character) character: Character | undefined = undefined;
+}
+
 export class Player extends Schema {
   @type('string') id: string = '';
   @type('string') username: string = ''; // Display name shown in game
@@ -30,6 +36,7 @@ export class Player extends Schema {
   @type('boolean') isEliminated: boolean = false;
   @type([Character]) bench = new ArraySchema<Character>();
   @type(['string']) shopCharacterIds = new ArraySchema<string>();
+  @type([BoardPosition]) board = new ArraySchema<BoardPosition>();
 }
 
 export class GameState extends Schema {
@@ -44,7 +51,7 @@ export class GameState extends Schema {
     player.username = displayName; // Store display name in username field
     player.userId = userId;
     player.hp = 100;
-    player.gold = 10; // Start with 10 gold for testing
+    player.gold = 11; // Start with 10 gold for testing
     player.xp = 0;
     player.level = 1;
     this.players.set(sessionId, player);
