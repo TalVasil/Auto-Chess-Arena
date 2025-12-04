@@ -15,6 +15,7 @@ export class Character extends Schema {
   @type('number') attack: number = 0;
   @type('number') defense: number = 0;
   @type('number') hp: number = 0;
+  @type('number') speed: number = 100;
   @type('number') stars: number = 1;
 }
 

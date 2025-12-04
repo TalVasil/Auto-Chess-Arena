@@ -10,6 +10,7 @@ export const CHARACTERS: ICharacter[] = [
     attack: 50,
     defense: 40,
     hp: 500,
+    speed: 80,
     imageUrl: '/assets/characters/knight.png',
     abilities: [
       {
@@ -30,6 +31,7 @@ export const CHARACTERS: ICharacter[] = [
     attack: 60,
     defense: 20,
     hp: 400,
+    speed: 120,
     imageUrl: '/assets/characters/archer.png',
     abilities: [
       {
@@ -49,6 +51,7 @@ export const CHARACTERS: ICharacter[] = [
     attack: 70,
     defense: 15,
     hp: 350,
+    speed: 90,
     imageUrl: '/assets/characters/mage.png',
     abilities: [
       {
@@ -68,6 +71,7 @@ export const CHARACTERS: ICharacter[] = [
     attack: 40,
     defense: 60,
     hp: 700,
+    speed: 70,
     imageUrl: '/assets/characters/paladin.png',
     abilities: [
       {
@@ -87,6 +91,7 @@ export const CHARACTERS: ICharacter[] = [
     attack: 90,
     defense: 25,
     hp: 450,
+    speed: 150,
     imageUrl: '/assets/characters/assassin.png',
     abilities: [
       {
@@ -106,6 +111,7 @@ export const CHARACTERS: ICharacter[] = [
     attack: 30,
     defense: 35,
     hp: 500,
+    speed: 100,
     imageUrl: '/assets/characters/cleric.png',
     abilities: [
       {
@@ -125,6 +131,7 @@ export const CHARACTERS: ICharacter[] = [
     attack: 100,
     defense: 50,
     hp: 800,
+    speed: 85,
     imageUrl: '/assets/characters/dragon_knight.png',
     abilities: [
       {
@@ -144,6 +151,7 @@ export const CHARACTERS: ICharacter[] = [
     attack: 120,
     defense: 30,
     hp: 600,
+    speed: 95,
     imageUrl: '/assets/characters/archmage.png',
     abilities: [
       {

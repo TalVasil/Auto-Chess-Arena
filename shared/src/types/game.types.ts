@@ -27,6 +27,7 @@ export interface ICharacter {
   attack: number;
   defense: number;
   hp: number;
+  speed: number;
   abilities: IAbility[];
   imageUrl: string;
 }

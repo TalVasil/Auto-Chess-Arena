@@ -387,9 +387,20 @@ export class AutoChessRoom extends Room<GameState> {
         this.state.timer = 30;
         this.elapsedTime = 0;
       } else if (this.state.phase === 'COMBAT') {
+        // Transition to PREPARATION - increment round and give gold
+        this.state.roundNumber++;
         this.state.phase = 'PREPARATION';
         this.state.timer = 30;
         this.elapsedTime = 0;
+
+        // Give income and regenerate shops for all players
+        this.state.players.forEach((player, sessionId) => {
+          player.gold += 5;
+          console.log(`💰 Player ${player.username} received 5 gold (total: ${player.gold})`);
+
+          const characterIds = CHARACTERS.map(c => c.id);
+          this.state.generateShopForPlayer(sessionId, characterIds);
+        });
       }
       console.log(`🔧 DEBUG: Phase toggled to ${this.state.phase} by ${client.sessionId}`);
       this.broadcast('phase_changed', {

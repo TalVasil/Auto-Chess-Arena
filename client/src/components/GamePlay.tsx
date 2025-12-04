@@ -24,11 +24,6 @@ export function GamePlay() {
 
   // Handle selecting character from bench
   const handleSelectCharacter = (index: number) => {
-    // Disable during COMBAT phase
-    if (phase === 'COMBAT') {
-      return;
-    }
-
     // If clicking the same bench character, deselect it
     if (selectedBenchIndex === index) {
       setSelectedBenchIndex(null);
@@ -66,11 +61,6 @@ export function GamePlay() {
   const handleSellCharacter = (benchIndex: number) => {
     if (!myPlayer) return;
 
-    // Disable during COMBAT phase
-    if (phase === 'COMBAT') {
-      return;
-    }
-
     // Clear any selections
     setSelectedBenchIndex(null);
     setSelectedArenaPos(null);
@@ -81,15 +71,26 @@ export function GamePlay() {
     console.log(`Selling character at bench index ${benchIndex}`);
   };
 
+  // Handle selling character from arena
+  const handleSellArenaCharacter = () => {
+    if (!myPlayer || !selectedArenaPos) return;
+
+    // Clear any selections
+    const { row, col } = selectedArenaPos;
+    setSelectedBenchIndex(null);
+    setSelectedArenaPos(null);
+    setCursorIcon(null);
+
+    // Send remove from board request to server (which gives gold back)
+    gameClient.send('remove_from_board', { row, col });
+    console.log(`Selling character from arena at (${row}, ${col})`);
+  };
+
   // Handle swapping/moving characters on bench
   const handleSwapBench = (fromIndex: number, toIndex: number) => {
     if (!myPlayer) return;
 
-    // Disable during COMBAT phase
-    if (phase === 'COMBAT') {
-      return;
-    }
-
+    // Allow bench swapping during both PREPARATION and COMBAT phases
     // Clear selections after swap
     setSelectedBenchIndex(null);
     setCursorIcon(null);
@@ -103,7 +104,7 @@ export function GamePlay() {
   const handleArenaCellClick = (row: number, col: number) => {
     if (!myPlayer) return;
 
-    // Disable during COMBAT phase
+    // During COMBAT phase - disable all arena interactions
     if (phase === 'COMBAT') {
       return;
     }
@@ -191,102 +192,35 @@ export function GamePlay() {
         </Box>
       )}
 
-      {/* Debug Controls */}
-      <HStack justify="center" mb={2} gap={2}>
-        <button
-          onClick={() => gameClient.send('debug_toggle_timer')}
-          style={{
-            background: 'rgba(255, 165, 0, 0.2)',
-            border: '2px solid #ffa500',
-            color: '#ffa500',
-            padding: '0.5rem 1rem',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            fontSize: '0.85rem'
-          }}
-        >
-          ⏯️ Toggle Timer
-        </button>
-        <button
-          onClick={() => gameClient.send('debug_toggle_phase')}
-          style={{
-            background: 'rgba(138, 43, 226, 0.2)',
-            border: '2px solid #8a2be2',
-            color: '#8a2be2',
-            padding: '0.5rem 1rem',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            fontSize: '0.85rem'
-          }}
-        >
-          🔄 Toggle Phase
-        </button>
-        <button
-          onClick={() => gameClient.send('debug_next_round')}
-          style={{
-            background: 'rgba(0, 255, 127, 0.2)',
-            border: '2px solid #00ff7f',
-            color: '#00ff7f',
-            padding: '0.5rem 1rem',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            fontSize: '0.85rem'
-          }}
-        >
-          ⏭️ Next Round
-        </button>
-        <button
-          onClick={() => gameClient.send('debug_reset_game')}
-          style={{
-            background: 'rgba(255, 0, 0, 0.2)',
-            border: '2px solid #ff0000',
-            color: '#ff0000',
-            padding: '0.5rem 1rem',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            fontSize: '0.85rem'
-          }}
-        >
-          🔄 Reset Game
-        </button>
-      </HStack>
-
-      {/* Game Header - Player Stats */}
-      <HStack justify="space-between" mb={4} px={4}>
-        <HStack gap={4}>
-          <Box bg="rgba(255, 0, 0, 0.2)" px={3} py={1} borderRadius="md" border="2px solid #ff4444">
+      {/* Stats and Game Info - Top Row */}
+      <HStack maxW="1400px" mx="auto" mb={2} justifyContent="space-between" alignItems="flex-start">
+        {/* Player Stats - Compact */}
+        <HStack gap={2}>
+          <Box bg="rgba(255, 0, 0, 0.2)" px={3} py={2} borderRadius="md" border="1px solid #ff4444">
             <Text fontSize="sm" color="#ff4444" fontWeight="bold">
-              ❤️ HP: {myPlayer.hp}
+              ❤️ {myPlayer.hp}
             </Text>
           </Box>
-          <Box bg="rgba(255, 215, 0, 0.2)" px={3} py={1} borderRadius="md" border="2px solid #ffd700">
-            <Text fontSize="sm" color="#ffd700" fontWeight="bold">
-              💰 Gold: {myPlayer.gold}
-            </Text>
-          </Box>
-          <Box bg="rgba(138, 43, 226, 0.2)" px={3} py={1} borderRadius="md" border="2px solid #8a2be2">
+          <Box bg="rgba(138, 43, 226, 0.2)" px={3} py={2} borderRadius="md" border="1px solid #8a2be2">
             <Text fontSize="sm" color="#8a2be2" fontWeight="bold">
-              ⭐ Level: {myPlayer.level}
+              ⭐ {myPlayer.level}
             </Text>
           </Box>
-          <Box bg="rgba(0, 191, 255, 0.2)" px={3} py={1} borderRadius="md" border="2px solid #00bfff">
+          <Box bg="rgba(0, 191, 255, 0.2)" px={3} py={2} borderRadius="md" border="1px solid #00bfff">
             <Text fontSize="sm" color="#00bfff" fontWeight="bold">
               📊 XP: {myPlayer.xp}
             </Text>
           </Box>
         </HStack>
 
-        <HStack gap={4}>
-          <Box bg="rgba(255, 255, 255, 0.1)" px={3} py={1} borderRadius="md">
+        {/* Game Phase Info */}
+        <HStack gap={2}>
+          <Box bg="rgba(255, 255, 255, 0.1)" px={3} py={2} borderRadius="md">
             <Text fontSize="sm" fontWeight="bold">
               Round {roundNumber}
             </Text>
           </Box>
-          <Box bg="rgba(0, 212, 255, 0.2)" px={3} py={1} borderRadius="md" border="2px solid #00d4ff">
+          <Box bg="rgba(0, 212, 255, 0.2)" px={3} py={2} borderRadius="md" border="1px solid #00d4ff">
             <Text fontSize="sm" color="#00d4ff" fontWeight="bold">
               ⏱️ {timer}s
             </Text>
@@ -294,19 +228,83 @@ export function GamePlay() {
           <Box
             bg={phase === 'PREPARATION' ? 'rgba(0, 255, 0, 0.2)' : 'rgba(255, 0, 0, 0.2)'}
             px={3}
-            py={1}
+            py={2}
             borderRadius="md"
-            border={`2px solid ${phase === 'PREPARATION' ? '#00ff00' : '#ff0000'}`}
+            border={`1px solid ${phase === 'PREPARATION' ? '#00ff00' : '#ff0000'}`}
           >
             <Text fontSize="sm" color={phase === 'PREPARATION' ? '#00ff00' : '#ff0000'} fontWeight="bold">
               {phase}
             </Text>
           </Box>
         </HStack>
+
+        {/* Debug Controls - Horizontal */}
+        <HStack gap={1}>
+          <button
+            onClick={() => gameClient.send('debug_toggle_timer')}
+            style={{
+              background: 'rgba(255, 165, 0, 0.2)',
+              border: '1px solid #ffa500',
+              color: '#ffa500',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '0.8rem'
+            }}
+          >
+            ⏯️
+          </button>
+          <button
+            onClick={() => gameClient.send('debug_toggle_phase')}
+            style={{
+              background: 'rgba(138, 43, 226, 0.2)',
+              border: '1px solid #8a2be2',
+              color: '#8a2be2',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '0.8rem'
+            }}
+          >
+            🔄
+          </button>
+          <button
+            onClick={() => gameClient.send('debug_next_round')}
+            style={{
+              background: 'rgba(0, 255, 127, 0.2)',
+              border: '1px solid #00ff7f',
+              color: '#00ff7f',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '0.8rem'
+            }}
+          >
+            ⏭️
+          </button>
+          <button
+            onClick={() => gameClient.send('debug_reset_game')}
+            style={{
+              background: 'rgba(255, 0, 0, 0.2)',
+              border: '1px solid #ff0000',
+              color: '#ff0000',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '0.8rem'
+            }}
+          >
+            🔄
+          </button>
+        </HStack>
       </HStack>
 
-      {/* Main Game Area */}
-      <VStack gap={0} maxW="1400px" mx="auto">
+      {/* Main Game Area - Arena, Bench, and Shop stacked vertically */}
+      <VStack gap={2} maxW="1400px" mx="auto" alignItems="center">
         {/* Arena */}
         <Arena
           boardPositions={myPlayer.board || []}
@@ -332,9 +330,26 @@ export function GamePlay() {
           )}
           playerGold={myPlayer.gold}
           phase={phase}
+          selectedBenchIndex={selectedBenchIndex}
+          benchCharacters={myPlayer.bench as any}
+          selectedArenaPos={selectedArenaPos}
+          arenaCharacters={(() => {
+            const boardArray = new Array(56).fill(null);
+            myPlayer.board.forEach(pos => {
+              const index = pos.row * 7 + pos.col;
+              boardArray[index] = pos.character;
+            });
+            return boardArray;
+          })()}
           onBuy={(characterId) => {
             console.log('Buying character:', characterId);
           }}
+          onSellSelectedCharacter={() => {
+            if (selectedBenchIndex !== null) {
+              handleSellCharacter(selectedBenchIndex);
+            }
+          }}
+          onSellArenaCharacter={handleSellArenaCharacter}
         />
       </VStack>
     </Box>

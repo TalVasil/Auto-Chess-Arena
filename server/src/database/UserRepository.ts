@@ -45,11 +45,6 @@ export class UserRepository {
       throw new Error('Username already taken');
     }
 
-    // Check if email already exists
-    const emailExists = await this.checkEmailExists(email);
-    if (emailExists) {
-      throw new Error('Email already registered');
-    }
 
     // Check if password is already used (unique password requirement)
     const passwordExists = await this.checkPasswordExists(password);
