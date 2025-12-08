@@ -52,6 +52,7 @@ export interface GameStoreState {
   connectionStatus: ConnectionStatus;
   isConnected: boolean;
   connectionError: string | null;
+  isConnecting: boolean; // Flag to prevent double connections
 
   // Game state (synced from server)
   phase: string;
@@ -94,6 +95,7 @@ export const useGameStore = create<GameStoreState>()(
       connectionStatus: 'disconnected',
       isConnected: false,
       connectionError: null,
+      isConnecting: false,
 
       // Game state
       phase: 'WAITING',
@@ -176,9 +178,50 @@ export const useGameStore = create<GameStoreState>()(
 
       // Connect to game server
       connect: async () => {
+        // Prevent double connections from React.StrictMode
+        if (get().isConnecting) {
+          console.log('⚠️ Connection already in progress, skipping duplicate call');
+          // Wait for the existing connection to complete
+          return new Promise((resolve) => {
+            const checkConnection = setInterval(() => {
+              const state = get();
+              if (!state.isConnecting) {
+                clearInterval(checkConnection);
+                resolve();
+              }
+            }, 100);
+          });
+        }
+
+        // Set flag to prevent duplicate calls
+        set({ isConnecting: true });
+
         try {
           const { accessToken } = get();
-          const room = await gameClient.connect(accessToken || undefined);
+
+          // Check if we have a saved session to reconnect to
+          const savedSession = gameClient.getStoredSession();
+
+          // If we have saved session, try to reconnect (true)
+          // If no saved session, join new game (false)
+          const shouldReconnect = savedSession !== null;
+
+          let room;
+
+          if (shouldReconnect) {
+            console.log('🔄 Attempting to reconnect to previous game...');
+            try {
+              room = await gameClient.connect(accessToken || undefined, true);
+            } catch (reconnectError) {
+              // Reconnection failed (token expired, server restarted, etc.)
+              // The GameClient already cleared the token, so now join a fresh game
+              console.log('⚠️ Reconnection failed, joining new game instead...');
+              room = await gameClient.connect(accessToken || undefined, false);
+            }
+          } else {
+            console.log('🆕 Joining new game...');
+            room = await gameClient.connect(accessToken || undefined, false);
+          }
 
       // Store our session ID and room ID
       set({
@@ -267,6 +310,9 @@ export const useGameStore = create<GameStoreState>()(
       });
 
       console.log('✅ Game store connected to server');
+
+      // Clear connecting flag on success
+      set({ isConnecting: false });
     } catch (error: any) {
       console.error('❌ Failed to connect game store:', error);
 
@@ -282,6 +328,7 @@ export const useGameStore = create<GameStoreState>()(
         connectionStatus: 'error',
         isConnected: false,
         connectionError: errorMessage,
+        isConnecting: false, // Clear connecting flag on error
       });
     }
   },
@@ -292,6 +339,7 @@ export const useGameStore = create<GameStoreState>()(
         set({
           connectionStatus: 'disconnected',
           isConnected: false,
+          isConnecting: false,
           mySessionId: null,
           roomId: null,
           players: [],

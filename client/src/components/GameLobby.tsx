@@ -29,10 +29,8 @@ export function GameLobby() {
       connect();
     }
 
-    // Cleanup on unmount
-    return () => {
-      disconnect();
-    };
+    // DON'T disconnect on unmount - we want to allow reconnection on page refresh
+    // Disconnect only happens when user clicks Logout button
   }, []); // Empty deps - only run once on mount
 
   // Get connection status display

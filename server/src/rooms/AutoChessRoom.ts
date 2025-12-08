@@ -13,6 +13,9 @@ export class AutoChessRoom extends Room<GameState> {
   onCreate(options: any) {
     console.log('AutoChessRoom created!', options);
 
+    // Enable reconnection - keep seat reserved for 5 minutes (300 seconds)
+    this.setSeatReservationTime(300);
+
     // Initialize game state
     this.setState(new GameState());
 
@@ -475,19 +478,6 @@ export class AutoChessRoom extends Room<GameState> {
       // Verify JWT token
       const decoded = AuthService.verifyAccessToken(token);
 
-      // Check if this userId is already in the room
-      let userAlreadyConnected = false;
-      this.state.players.forEach((player) => {
-        if (player.userId === decoded.userId && player.userId !== 0) {
-          userAlreadyConnected = true;
-        }
-      });
-
-      if (userAlreadyConnected) {
-        console.log(`❌ User ${decoded.username} (ID: ${decoded.userId}) is already in the room`);
-        throw new Error('You are already connected to this game room');
-      }
-
       console.log(`✅ Authenticated user: ${decoded.username} (ID: ${decoded.userId})`);
 
       // Return user data to be used in onJoin
@@ -505,6 +495,57 @@ export class AutoChessRoom extends Room<GameState> {
   onJoin(client: Client, options: any, auth: any) {
     console.log(`✅ Player ${client.sessionId} joined!`, { displayName: auth.displayName, userId: auth.userId });
 
+    // Check if this player already exists (reconnection)
+    const existingPlayer = this.state.players.get(client.sessionId);
+
+    if (existingPlayer) {
+      // RECONNECTION - player already exists in game
+      console.log('✅ Player reconnected:', client.sessionId);
+      console.log('   Restored state:', {
+        username: existingPlayer.username,
+        gold: existingPlayer.gold,
+        hp: existingPlayer.hp,
+        benchSize: existingPlayer.bench.length
+      });
+
+      // If game already started, need to resync game state
+      if (this.state.phase !== 'WAITING') {
+        console.log('   Reconnecting during', this.state.phase, 'phase');
+        // The state sync happens automatically via Colyseus
+        // Client will receive full state update on reconnection
+      }
+
+      // Player data is already in state, nothing to do!
+      return;
+    }
+
+    // Check if this userId is already in the game (prevent multiple connections from same user)
+    // BUT: Only block if the old connection is still active (not waiting for reconnection)
+    const duplicatePlayer = Array.from(this.state.players.values()).find(
+      (p) => p.userId === auth.userId
+    );
+
+    if (duplicatePlayer) {
+      // Check if the old session is actually still connected
+      const oldClient = this.clients.find((c) => c.sessionId === duplicatePlayer.id);
+
+      if (oldClient) {
+        // Old session is still ACTIVE - this is a duplicate connection attempt
+        console.log(`⚠️ User ${auth.displayName} (ID: ${auth.userId}) is already connected with sessionId: ${duplicatePlayer.id}`);
+        console.log('🚫 Rejecting duplicate connection');
+        throw new Error('You are already connected to this game from another tab or device.');
+      } else {
+        // Old session is disconnected and waiting for reconnection
+        // This is the same user trying to reconnect with a new sessionId (token expired)
+        // Remove the old player data and let them join as new
+        console.log(`🔄 User ${auth.displayName} (ID: ${auth.userId}) reconnection token expired, removing old session ${duplicatePlayer.id}`);
+        this.state.removePlayer(duplicatePlayer.id);
+      }
+    }
+
+    // NEW PLAYER - create new player data
+    console.log('🆕 New player joining:', client.sessionId);
+
     // Add player to game state with authenticated user data
     this.state.addPlayer(client.sessionId, auth.displayName, auth.userId);
 
@@ -515,11 +556,53 @@ export class AutoChessRoom extends Room<GameState> {
     console.log(`👥 Total players: ${this.state.players.size}/8`);
   }
 
-  onLeave(client: Client, consented: boolean) {
+  async onLeave(client: Client, consented: boolean) {
     console.log(`👋 Player ${client.sessionId} left! (consented: ${consented})`);
 
-    // Remove player from game state
-    this.state.removePlayer(client.sessionId);
+    const player = this.state.players.get(client.sessionId);
+
+    if (!player) {
+      console.log('⚠️ Player not found in state');
+      return;
+    }
+
+    // If consented = true, player clicked "Logout" (intentional)
+    // If consented = false, it was accidental (browser close, network error)
+
+    if (consented) {
+      // Intentional disconnect - remove player immediately
+      console.log('🚪 Player left intentionally, removing from game');
+      this.state.removePlayer(client.sessionId);
+    } else {
+      // Accidental disconnect - keep player data for reconnection
+      console.log('⏳ Player disconnected accidentally, keeping data for reconnection');
+
+      // Allow reconnection for this client
+      console.log('🔧 Calling allowReconnection() for:', client.sessionId);
+      try {
+        // Don't await - this returns a promise that resolves when player reconnects
+        this.allowReconnection(client, 300).then(() => {
+          console.log('✅ Player successfully reconnected:', client.sessionId);
+        }).catch((error) => {
+          // Reconnection window expired - remove player from game
+          console.log('⏰ Reconnection window expired for:', client.sessionId);
+          console.log('🗑️ Removing player from game (timeout)');
+          this.state.removePlayer(client.sessionId);
+          console.log(`👥 Total players after cleanup: ${this.state.players.size}/8`);
+        });
+        console.log('✅ Reconnection window opened for player:', client.sessionId);
+      } catch (error: any) {
+        console.error('❌ Failed to allow reconnection:', error);
+        console.error('❌ Error details:', {
+          message: error?.message,
+          stack: error?.stack,
+          name: error?.name
+        });
+      }
+
+      // Player data stays in this.state.players
+      // Colyseus will automatically clean it up after seat reservation time expires
+    }
 
     console.log(`👥 Total players: ${this.state.players.size}/8`);
   }
