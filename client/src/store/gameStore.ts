@@ -488,6 +488,7 @@ export const useGameStore = create<GameStoreState>()(
     {
       name: 'auto-chess-storage',
       partialize: (state) => ({
+        accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         userId: state.userId,
         username: state.username,
