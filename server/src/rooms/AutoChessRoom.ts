@@ -606,14 +606,10 @@ export class AutoChessRoom extends Room<GameState> {
   async onAuth(client: Client, options: any) {
     const token = options.token;
 
-    // Allow joining without token (for backward compatibility during development)
+    // Require authentication - no guest access allowed
     if (!token) {
-      console.log(`⚠️ Player ${client.sessionId} joining without authentication`);
-      return {
-        userId: 0,
-        username: `Guest_${client.sessionId.substring(0, 4)}`,
-        displayName: `Guest_${client.sessionId.substring(0, 4)}`,
-      };
+      console.error(`🚫 Player ${client.sessionId} attempted to join without authentication - REJECTED`);
+      throw new Error('Authentication required. Please log in to play.');
     }
 
     try {
