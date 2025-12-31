@@ -767,9 +767,10 @@ export class AutoChessRoom extends Room<GameState> {
   }
 
   async onLeave(client: Client, consented: boolean) {
-    console.log(`👋 Player ${client.sessionId} left! (consented: ${consented})`);
-
     const player = this.state.players.get(client.sessionId);
+    const playerName = player?.username || client.sessionId;
+
+    console.log(`👋 ${playerName} left! (consented: ${consented})`);
 
     if (!player) {
       console.log('⚠️ Player not found in state');
@@ -781,26 +782,26 @@ export class AutoChessRoom extends Room<GameState> {
 
     if (consented) {
       // Intentional disconnect - remove player immediately
-      console.log('🚪 Player left intentionally, removing from game');
+      console.log(`🚪 ${playerName} left intentionally, removing from game`);
       this.state.removePlayer(client.sessionId);
+      console.log(`👥 Total players: ${this.state.players.size}/8`);
     } else {
       // Accidental disconnect - keep player data for reconnection
-      console.log('⏳ Player disconnected accidentally, keeping data for reconnection');
+      console.log(`⏳ ${playerName} disconnected accidentally, keeping data for reconnection`);
 
       // Allow reconnection for this client
-      console.log('🔧 Calling allowReconnection() for:', client.sessionId);
       try {
         // Don't await - this returns a promise that resolves when player reconnects
-        this.allowReconnection(client, 300).then(() => {
-          console.log('✅ Player successfully reconnected:', client.sessionId);
+        this.allowReconnection(client, 1800).then(() => {
+          console.log(`✅ ${playerName} successfully reconnected`);
         }).catch((error) => {
           // Reconnection window expired - remove player from game
-          console.log('⏰ Reconnection window expired for:', client.sessionId);
+          console.log(`⏰ Reconnection window expired for ${playerName}`);
           console.log('🗑️ Removing player from game (timeout)');
           this.state.removePlayer(client.sessionId);
           console.log(`👥 Total players after cleanup: ${this.state.players.size}/8`);
         });
-        console.log('✅ Reconnection window opened for player:', client.sessionId);
+        console.log(`✅ Reconnection window opened for ${playerName} (30 minutes)`);
       } catch (error: any) {
         console.error('❌ Failed to allow reconnection:', error);
         console.error('❌ Error details:', {
