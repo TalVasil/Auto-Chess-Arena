@@ -1,6 +1,7 @@
 import colyseus from 'colyseus';
 const { Room } = colyseus;
 import type { Client } from 'colyseus';
+import { ArraySchema } from '@colyseus/schema';
 import { GameState, Character, BoardPosition, Player, Matchup } from '../schema/GameState.js';
 import { characterService } from '../services/CharacterService.js';
 import { AuthService } from '../services/AuthService.js';
@@ -879,11 +880,135 @@ export class AutoChessRoom extends Room<GameState> {
     console.log('✅ Game started successfully!');
   }
 
+  /**
+   * Auto-fill each player's arena with bench characters up to their level
+   * Called before transitioning to COMBAT phase
+   */
+  autoFillArenasBeforeCombat() {
+    this.state.players.forEach((player) => {
+      const currentBoardCount = player.board.length;
+      const maxUnits = player.level;
+      const spotsToFill = maxUnits - currentBoardCount;
+
+      if (spotsToFill <= 0 || player.bench.length === 0) {
+        return; // Arena is already full or bench is empty
+      }
+
+      console.log(`🔄 Auto-filling arena for ${player.username}: ${currentBoardCount}/${maxUnits} units, ${spotsToFill} spots available`);
+
+      let filled = 0;
+      // Try to place bench characters on the arena
+      for (let benchIndex = 0; benchIndex < player.bench.length && filled < spotsToFill; benchIndex++) {
+        const character = player.bench[benchIndex];
+        if (!character) continue;
+
+        // Find an empty position in player's side (columns 5-8)
+        const emptyPosition = this.findEmptyPositionOnPlayerSide(player);
+        if (emptyPosition) {
+          // Create a new board position with the character
+          const boardPos = new BoardPosition();
+          boardPos.row = emptyPosition.row;
+          boardPos.col = emptyPosition.col;
+          boardPos.character = character;
+
+          // Add to board
+          player.board.push(boardPos);
+
+          // Remove from bench (set to undefined instead of splice to maintain array structure)
+          player.bench[benchIndex] = undefined as any;
+
+          filled++;
+          console.log(`✅ Auto-placed ${character.name} at (${emptyPosition.row}, ${emptyPosition.col}) for ${player.username}`);
+        }
+      }
+
+      // Clean up bench - remove undefined entries
+      const cleanBench = new ArraySchema<Character>();
+      player.bench.forEach((char) => {
+        if (char) cleanBench.push(char);
+      });
+      player.bench.clear();
+      cleanBench.forEach((char) => player.bench.push(char));
+
+      if (filled > 0) {
+        console.log(`✅ Auto-filled ${filled} characters for ${player.username}. Board now: ${player.board.length}/${maxUnits}`);
+      }
+    });
+  }
+
+  /**
+   * Check if player has enough XP to level up and handle the level-up
+   */
+  checkAndHandleLevelUp(player: Player) {
+    // Level-up XP requirements (cumulative)
+    const LEVEL_UP_XP: { [key: number]: number } = {
+      1: 0,
+      2: 2,
+      3: 4,
+      4: 12,
+      5: 24,
+      6: 44,
+      7: 79,
+      8: 119,
+      9: 179,
+      10: 249,
+    };
+
+    const MAX_LEVEL = 10;
+    const currentLevel = player.level;
+
+    // Check if player can level up
+    if (currentLevel < MAX_LEVEL) {
+      const nextLevel = currentLevel + 1;
+      const xpRequired = LEVEL_UP_XP[nextLevel];
+
+      if (player.xp >= xpRequired) {
+        player.level = nextLevel;
+        console.log(`🎉 Player ${player.username} leveled up to ${nextLevel}!`);
+
+        // Send level-up notification to client
+        const playerClient = Array.from(this.clients).find(
+          (client) => client.sessionId === player.id
+        );
+
+        if (playerClient) {
+          playerClient.send('level_up', {
+            newLevel: nextLevel,
+            message: `You can now field ${nextLevel} units!`,
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Find an empty position on the player's side of the arena (columns 5-8)
+   * Returns the first available position or null if arena is full
+   */
+  findEmptyPositionOnPlayerSide(player: Player): { row: number; col: number } | null {
+    // Check all positions in player's side (columns 5-8, rows 0-7)
+    for (let col = 5; col <= 8; col++) {
+      for (let row = 0; row <= 7; row++) {
+        // Check if this position is already occupied
+        const occupied = player.board.some(
+          (pos) => pos.row === row && pos.col === col
+        );
+        if (!occupied) {
+          return { row, col };
+        }
+      }
+    }
+    return null; // No empty positions found
+  }
+
   // Handle phase transitions when timer reaches 0
   handlePhaseTransition() {
     console.log(`⏰ Timer expired! Current phase: ${this.state.phase}`);
 
     if (this.state.phase === 'PREPARATION') {
+      // Auto-fill arena with bench characters up to player level
+      this.autoFillArenasBeforeCombat();
+
       // Transition from PREPARATION to COMBAT
       this.state.phase = 'COMBAT';
       this.state.timer = 30; // Combat phase duration (placeholder)
@@ -921,8 +1046,16 @@ export class AutoChessRoom extends Room<GameState> {
       console.log(`🔄 Round ${this.state.roundNumber} - PREPARATION phase`);
       // Note: Phase change will be automatically synced via Colyseus onStateChange
 
-      // Give income and regenerate shops for all players
+      // Award XP and handle level-ups, give income and regenerate shops
       this.state.players.forEach((player) => {
+        // Award 2 XP per round
+        const XP_PER_ROUND = 2;
+        player.xp += XP_PER_ROUND;
+        console.log(`📈 Player ${player.username} received ${XP_PER_ROUND} XP (total: ${player.xp})`);
+
+        // Check for level up
+        this.checkAndHandleLevelUp(player);
+
         // Grant 5 gold income each round
         player.gold += 5;
         console.log(`💰 Player ${player.username} received 5 gold (total: ${player.gold})`);
