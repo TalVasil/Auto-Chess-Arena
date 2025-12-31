@@ -1,5 +1,4 @@
 # Auto Chess Arena - Game Overview
-
 ## Game Concept
 
 Auto Chess Arena is a real-time strategy multiplayer game for 8 players, combining tactical positioning, resource management, and automated combat. Players build armies of unique characters, position them strategically on a grid-based arena, and watch them battle autonomously against other players.
@@ -74,8 +73,8 @@ Characters fight automatically based on their programmed abilities
 ### **Shop** (Bottom)
 - Displays 5 random characters available for purchase
 - Character pool refreshes each round
-- **Reroll Button** (Right): Spend gold to refresh available characters
-- **Buy XP Button** (Left): Spend gold to gain experience points
+- **Reroll Button**: Spend gold to refresh available characters
+- **Buy XP Button**: Spend gold to gain experience points
 - Each character has a gold cost and rarity tier
 
 ### **Scoreboard** (Right Side)
@@ -134,7 +133,7 @@ Players are ranked by elimination order (1st to 8th place)
 
 | Phase | Duration | Player Actions | Outcome |
 |-------|----------|----------------|---------|
-| **Preparation** | Timed (varies by round) | Buy characters, position team, manage resources | Team is locked when timer expires |
+| **Preparation** | Timed | Buy characters, position team, manage resources | Team is locked when timer expires |
 | **Combat** | Until one team eliminated | Watch automated battle | Winner gets +1 gold, loser takes HP damage |
 
 ---
@@ -253,12 +252,12 @@ GAME_END
 
 ---
 
-## Next Steps for Development
+<!-- ## Next Steps for Development
 
 1. **Phase 1**: Core game loop (single-player vs AI)
 2. **Phase 2**: Character definitions and combat system
 3. **Phase 3**: Multiplayer networking and synchronization
 4. **Phase 4**: UI/UX polish and visual effects
-5. **Phase 5**: Balance, testing, and deployment
+5. **Phase 5**: Balance, testing, and deployment -->
 
 This document serves as the foundation for all development efforts. All features, mechanics, and technical implementations should reference back to this game design specification.

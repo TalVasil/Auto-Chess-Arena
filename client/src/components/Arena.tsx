@@ -6,6 +6,7 @@ interface BoardPosition {
   character?: {
     id: string;
     name: string;
+    emoji: string;
     cost: number;
   };
 }
@@ -58,8 +59,8 @@ export function Arena({ boardPositions, selectedArenaPos, onCellClick }: ArenaPr
             onClick={() => onCellClick(row, col)}
           >
             {position?.character && (
-              <div className="arena-character">
-                ⚔️
+              <div className="arena-character" title={position.character.name}>
+                {position.character.emoji}
               </div>
             )}
           </div>

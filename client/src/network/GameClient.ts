@@ -79,11 +79,65 @@ class GameClient {
             return this.room;
 
           } catch (reconnectError) {
-            // Reconnection failed - clear old session and throw error
-            console.log('❌ Reconnection failed:', reconnectError);
-            this.clearStoredSession();
-            this.setStatus('error');
-            throw new Error('Failed to reconnect to previous game');
+            // PHASE 2B: Reconnection failed - try to find new room ID after server restart
+            console.log('⚠️ Token-based reconnection failed, trying recovery methods...');
+
+            try {
+              // Extract old room ID from saved session
+              const oldRoomId = saved.split(':')[0]; // Format is "roomId:sessionId"
+
+              // Call room mapping API (for server restart recovery)
+              const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:2567';
+              const response = await fetch(`${apiUrl}/api/game/room-mapping/${oldRoomId}`);
+
+              if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.newRoomId) {
+                  console.log(`✅ Server was restarted - found new room: ${oldRoomId} → ${data.newRoomId}`);
+
+                  // Join the recovered room
+                  const options = token ? { token } : {};
+                  this.room = await this.client.joinById(data.newRoomId, options);
+
+                  // Save new reconnection token
+                  localStorage.setItem('colyseusReconnectionToken', this.room.reconnectionToken);
+                  console.log('💾 Saved new reconnection token after recovery');
+
+                  this.setStatus('connected');
+                  this.reconnectAttempts = 0;
+                  this.setupRoomListeners();
+
+                  console.log('🎉 Successfully recovered game after server restart!');
+                  return this.room;
+                }
+              }
+
+              // Room mapping not found - this is normal if server didn't restart
+              // Fall through to try joining the same room (session transfer will handle it)
+              console.log('🔄 No server restart detected, will try joining original room...');
+
+              // Try joining the original room - server will transfer session if user matches
+              const options = token ? { token } : {};
+              this.room = await this.client.joinById(oldRoomId, options);
+
+              // Save new reconnection token
+              localStorage.setItem('colyseusReconnectionToken', this.room.reconnectionToken);
+              console.log('💾 Saved new reconnection token');
+
+              this.setStatus('connected');
+              this.reconnectAttempts = 0;
+              this.setupRoomListeners();
+
+              console.log('✅ Reconnected via session transfer!');
+              return this.room;
+
+            } catch (mappingError) {
+              // All recovery methods failed
+              console.error('❌ All reconnection methods failed:', mappingError);
+              this.clearStoredSession();
+              this.setStatus('error');
+              throw new Error('Failed to reconnect - please start a new game');
+            }
           }
         } else {
           // No saved session found when trying to reconnect

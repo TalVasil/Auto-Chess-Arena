@@ -66,7 +66,7 @@ export function Bench({ characters, playerGold, selectedBenchIndex, onSelectChar
             {character ? (
               <>
                 <div className="slot-character">
-                  <div className="slot-icon">⚔️</div>
+                  <div className="slot-icon">{character.emoji}</div>
                   <div className="slot-name">{character.name}</div>
                   <div className="slot-stats">
                     <span title="Cost">💰{character.cost}</span>

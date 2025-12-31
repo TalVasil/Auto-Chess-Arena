@@ -22,6 +22,7 @@ export interface IPlayer {
 export interface ICharacter {
   id: string;
   name: string;
+  emoji: string; // Visual representation using emoji
   cost: number;
   rarity: CharacterRarity;
   attack: number;

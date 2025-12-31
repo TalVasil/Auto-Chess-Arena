@@ -1,9 +1,10 @@
 import colyseus from 'colyseus';
 const { Room } = colyseus;
 import type { Client } from 'colyseus';
-import { GameState, Character, BoardPosition } from '../schema/GameState.js';
-import { CHARACTERS } from '../../../shared/src/constants/characterData.js';
+import { GameState, Character, BoardPosition, Player, Matchup } from '../schema/GameState.js';
+import { characterService } from '../services/CharacterService.js';
 import { AuthService } from '../services/AuthService.js';
+import { gameStateSnapshotService } from '../services/GameStateSnapshotService.js';
 
 export class AutoChessRoom extends Room<GameState> {
   maxClients = 8;
@@ -13,11 +14,29 @@ export class AutoChessRoom extends Room<GameState> {
   onCreate(options: any) {
     console.log('AutoChessRoom created!', options);
 
-    // Enable reconnection - keep seat reserved for 5 minutes (300 seconds)
-    this.setSeatReservationTime(300);
+    // Enable reconnection - keep seat reserved for 30 minutes (1800 seconds)
+    // Matches the snapshot expiry time so players can always reconnect
+    this.setSeatReservationTime(1800);
 
-    // Initialize game state
-    this.setState(new GameState());
+    // PHASE 1B: Check if this is a recovery (server restart)
+    if (options.recover && options.snapshotData) {
+      console.log('🔄 RECOVERY MODE: Restoring game from snapshot...');
+
+      // Initialize empty state first
+      this.setState(new GameState());
+
+      // Restore state from snapshot
+      this.deserializeGameState(options.snapshotData);
+
+      console.log(`✅ Room recovered! Players: ${this.state.players.size}, Phase: ${this.state.phase}`);
+    } else {
+      // Normal initialization - fresh game
+      console.log('🆕 NEW GAME: Creating fresh game state...');
+      this.setState(new GameState());
+    }
+
+    // Start periodic snapshots to database
+    gameStateSnapshotService.startSnapshots(this.roomId, () => this.state);
 
     // Set game loop interval (50ms = 20 ticks per second)
     this.setSimulationInterval((deltaTime) => this.update(deltaTime), 50);
@@ -40,7 +59,7 @@ export class AutoChessRoom extends Room<GameState> {
       }
 
       // Find the character data
-      const characterData = CHARACTERS.find(c => c.id === characterId);
+      const characterData = characterService.getCharacterById(characterId);
       if (!characterData) {
         console.error(`❌ Character ${characterId} not found`);
         return;
@@ -60,6 +79,7 @@ export class AutoChessRoom extends Room<GameState> {
       const character = new Character();
       character.id = characterData.id;
       character.name = characterData.name;
+      character.emoji = characterData.emoji;
       character.cost = characterData.cost;
       character.rarity = characterData.rarity;
       character.attack = characterData.attack;
@@ -157,7 +177,7 @@ export class AutoChessRoom extends Room<GameState> {
       player.gold -= rerollCost;
 
       // Regenerate shop
-      const characterIds = CHARACTERS.map(c => c.id);
+      const characterIds = characterService.getAllCharacterIds();
       this.state.generateShopForPlayer(client.sessionId, characterIds);
 
       console.log(`🔄 Player ${player.username} rerolled shop for ${rerollCost} gold. Remaining gold: ${player.gold}`);
@@ -397,20 +417,16 @@ export class AutoChessRoom extends Room<GameState> {
         this.elapsedTime = 0;
 
         // Give income and regenerate shops for all players
-        this.state.players.forEach((player, sessionId) => {
+        this.state.players.forEach((player) => {
           player.gold += 5;
           console.log(`💰 Player ${player.username} received 5 gold (total: ${player.gold})`);
-
-          const characterIds = CHARACTERS.map(c => c.id);
-          this.state.generateShopForPlayer(sessionId, characterIds);
         });
+
+        const characterIds = characterService.getAllCharacterIds();
+        this.state.regenerateAllShops(characterIds);
       }
       console.log(`🔧 DEBUG: Phase toggled to ${this.state.phase} by ${client.sessionId}`);
-      this.broadcast('phase_changed', {
-        phase: this.state.phase,
-        roundNumber: this.state.roundNumber,
-        message: `DEBUG: Phase toggled to ${this.state.phase}`,
-      });
+      // Note: Phase change will be automatically synced via Colyseus onStateChange
     });
 
     // Debug: Skip to next round
@@ -443,11 +459,11 @@ export class AutoChessRoom extends Room<GameState> {
         // Clear bench and board
         player.bench.clear();
         player.board.clear();
-
-        // Regenerate shop
-        const characterIds = CHARACTERS.map(c => c.id);
-        this.state.generateShopForPlayer(sessionId, characterIds);
       });
+
+      // Regenerate shops for all players
+      const characterIds = characterService.getAllCharacterIds();
+      this.state.regenerateAllShops(characterIds);
 
       this.broadcast('game_reset', {
         message: 'Game has been reset!',
@@ -461,6 +477,116 @@ export class AutoChessRoom extends Room<GameState> {
    * Authenticate player before allowing them to join
    * This is called before onJoin
    */
+  /**
+   * PHASE 1A: Deserialize JSON snapshot back to Colyseus Schema
+   * Converts saved game state from database into GameState schema
+   */
+  private deserializeGameState(snapshotData: any): void {
+    console.log('🔄 Deserializing game state from snapshot...');
+
+    try {
+      const data = typeof snapshotData === 'string' ? JSON.parse(snapshotData) : snapshotData;
+
+      // Restore basic game state
+      this.state.phase = data.phase || 'WAITING';
+      this.state.roundNumber = data.roundNumber || 0;
+      this.state.timer = data.timer || 30;
+
+      console.log(`   Phase: ${this.state.phase}, Round: ${this.state.roundNumber}`);
+
+      // Restore players
+      if (data.players && Array.isArray(data.players)) {
+        for (const playerData of data.players) {
+          const player = new Player();
+
+          // Basic player info
+          player.id = playerData.id || playerData.sessionId;
+          player.username = playerData.username;
+          player.userId = playerData.userId;
+          player.hp = playerData.hp;
+          player.gold = playerData.gold;
+          player.xp = playerData.xp;
+          player.level = playerData.level;
+          player.isReady = playerData.isReady;
+          player.isEliminated = playerData.isEliminated;
+
+          // Restore bench characters
+          if (playerData.bench && Array.isArray(playerData.bench)) {
+            for (const charData of playerData.bench) {
+              const character = new Character();
+              character.id = charData.id;
+              character.name = charData.name;
+              character.emoji = charData.emoji;
+              character.cost = charData.cost;
+              character.rarity = charData.rarity;
+              character.attack = charData.attack;
+              character.defense = charData.defense;
+              character.hp = charData.hp;
+              character.speed = charData.speed;
+              character.stars = charData.stars;
+              player.bench.push(character);
+            }
+          }
+
+          // Restore shop character IDs
+          if (playerData.shopCharacterIds && Array.isArray(playerData.shopCharacterIds)) {
+            for (const charId of playerData.shopCharacterIds) {
+              player.shopCharacterIds.push(charId);
+            }
+          }
+
+          // Restore board positions
+          if (playerData.board && Array.isArray(playerData.board)) {
+            for (const posData of playerData.board) {
+              const position = new BoardPosition();
+              position.row = posData.row;
+              position.col = posData.col;
+
+              if (posData.character) {
+                const character = new Character();
+                character.id = posData.character.id;
+                character.name = posData.character.name;
+                character.emoji = posData.character.emoji;
+                character.cost = posData.character.cost;
+                character.rarity = posData.character.rarity;
+                character.attack = posData.character.attack;
+                character.defense = posData.character.defense;
+                character.hp = posData.character.hp;
+                character.speed = posData.character.speed;
+                character.stars = posData.character.stars;
+                position.character = character;
+              }
+
+              player.board.push(position);
+            }
+          }
+
+          // Add player to state
+          this.state.players.set(player.id, player);
+          console.log(`   ✅ Restored player: ${player.username} (HP: ${player.hp}, Gold: ${player.gold})`);
+        }
+      }
+
+      // Restore matchups
+      if (data.currentMatchups && Array.isArray(data.currentMatchups)) {
+        for (const matchupData of data.currentMatchups) {
+          const matchup = new Matchup();
+          matchup.player1Id = matchupData.player1Id;
+          matchup.player2Id = matchupData.player2Id;
+          matchup.player1Name = matchupData.player1Name;
+          matchup.player2Name = matchupData.player2Name;
+          this.state.currentMatchups.push(matchup);
+        }
+        console.log(`   ✅ Restored ${this.state.currentMatchups.length} matchups`);
+      }
+
+      console.log('✅ Game state deserialized successfully!');
+    } catch (error) {
+      console.error('❌ Failed to deserialize game state:', error);
+      throw error;
+    }
+  }
+
   async onAuth(client: Client, options: any) {
     const token = options.token;
 
@@ -515,6 +641,23 @@ export class AutoChessRoom extends Room<GameState> {
         // Client will receive full state update on reconnection
       }
 
+      // If reconnecting during COMBAT phase, send matchup info
+      if (this.state.phase === 'COMBAT' && this.state.currentMatchups.length > 0) {
+        const matchups = this.state.currentMatchups.map((m) => ({
+          player1Id: m.player1Id,
+          player1Name: m.player1Name,
+          player2Id: m.player2Id,
+          player2Name: m.player2Name,
+        }));
+
+        client.send('combat_matchups', {
+          roundNumber: this.state.roundNumber,
+          matchups: matchups,
+        });
+
+        console.log('   📤 Sent combat matchup to reconnected player (same session)');
+      }
+
       // Player data is already in state, nothing to do!
       return;
     }
@@ -536,10 +679,61 @@ export class AutoChessRoom extends Room<GameState> {
         throw new Error('You are already connected to this game from another tab or device.');
       } else {
         // Old session is disconnected and waiting for reconnection
-        // This is the same user trying to reconnect with a new sessionId (token expired)
-        // Remove the old player data and let them join as new
-        console.log(`🔄 User ${auth.displayName} (ID: ${auth.userId}) reconnection token expired, removing old session ${duplicatePlayer.id}`);
-        this.state.removePlayer(duplicatePlayer.id);
+        // This is the same user trying to reconnect with a new sessionId (token expired or server restart)
+        // TRANSFER the old player data to the new sessionId instead of removing it
+        console.log(`🔄 User ${auth.displayName} (ID: ${auth.userId}) reconnection token expired, transferring session ${duplicatePlayer.id} → ${client.sessionId}`);
+
+        const oldSessionId = duplicatePlayer.id;
+
+        // Remove player from old sessionId
+        this.state.players.delete(oldSessionId);
+
+        // Update player's sessionId to the new one
+        duplicatePlayer.id = client.sessionId;
+
+        // Add player back with new sessionId
+        this.state.players.set(client.sessionId, duplicatePlayer);
+
+        // Update matchups to use new session ID
+        this.state.currentMatchups.forEach((matchup) => {
+          if (matchup.player1Id === oldSessionId) {
+            matchup.player1Id = client.sessionId;
+            console.log(`   Updated matchup player1Id: ${oldSessionId} → ${client.sessionId}`);
+          }
+          if (matchup.player2Id === oldSessionId) {
+            matchup.player2Id = client.sessionId;
+            console.log(`   Updated matchup player2Id: ${oldSessionId} → ${client.sessionId}`);
+          }
+        });
+
+        console.log(`✅ Player data transferred! Preserved: HP=${duplicatePlayer.hp}, Gold=${duplicatePlayer.gold}, XP=${duplicatePlayer.xp}, Bench=${duplicatePlayer.bench.length}, Board=${duplicatePlayer.board.length}`);
+
+        // If we're in COMBAT phase with existing matchups, send updated matchups
+        // This is necessary because other players' myOpponentId now points to the old session ID
+        if (this.state.phase === 'COMBAT' && this.state.currentMatchups.length > 0) {
+          const matchups = this.state.currentMatchups.map((m) => ({
+            player1Id: m.player1Id,
+            player1Name: m.player1Name,
+            player2Id: m.player2Id,
+            player2Name: m.player2Name,
+          }));
+
+          const matchupData = {
+            roundNumber: this.state.roundNumber,
+            matchups: matchups,
+          };
+
+          // Send to the reconnecting player (may not receive broadcast in time)
+          client.send('combat_matchups', matchupData);
+
+          // Broadcast to OTHER clients (exclude current) to update their opponent IDs
+          this.broadcast('combat_matchups', matchupData, { except: client });
+
+          console.log(`   📤 Sent matchups to reconnected player + broadcast to others`);
+        }
+
+        // Player data is preserved, nothing more to do!
+        return;
       }
     }
 
@@ -550,7 +744,7 @@ export class AutoChessRoom extends Room<GameState> {
     this.state.addPlayer(client.sessionId, auth.displayName, auth.userId);
 
     // Generate initial shop for the player
-    const characterIds = CHARACTERS.map(c => c.id);
+    const characterIds = characterService.getAllCharacterIds();
     this.state.generateShopForPlayer(client.sessionId, characterIds);
 
     console.log(`👥 Total players: ${this.state.players.size}/8`);
@@ -607,9 +801,14 @@ export class AutoChessRoom extends Room<GameState> {
     console.log(`👥 Total players: ${this.state.players.size}/8`);
   }
 
-  onDispose() {
+  async onDispose() {
     console.log('Room disposed!');
-    // Cleanup logic here
+
+    // Stop periodic snapshots
+    gameStateSnapshotService.stopSnapshots(this.roomId);
+
+    // Save final snapshot and mark session as inactive
+    await gameStateSnapshotService.finalizeSession(this.roomId, this.state);
   }
 
   update(deltaTime: number) {
@@ -662,11 +861,7 @@ export class AutoChessRoom extends Room<GameState> {
       player.isReady = false;
     });
 
-    // Broadcast game start message to all clients
-    this.broadcast('game_started', {
-      message: 'Game has started!',
-      phase: this.state.phase,
-    });
+    // Note: Game start is communicated via automatic state sync (phase change)
 
     console.log('✅ Game started successfully!');
   }
@@ -682,11 +877,25 @@ export class AutoChessRoom extends Room<GameState> {
       this.elapsedTime = 0;
 
       console.log('⚔️ Starting COMBAT phase...');
-      this.broadcast('phase_changed', {
-        phase: 'COMBAT',
+
+      // Generate matchups for this round
+      this.state.generateMatchups(this.state.roundNumber);
+
+      // Build matchup data for broadcast with player names
+      const matchupsData = this.state.currentMatchups.map(matchup => ({
+        player1Id: matchup.player1Id,
+        player2Id: matchup.player2Id,
+        player1Name: matchup.player1Name,
+        player2Name: matchup.player2Name,
+      }));
+
+      // Broadcast matchups to all clients
+      this.broadcast('combat_matchups', {
+        matchups: matchupsData,
         roundNumber: this.state.roundNumber,
-        message: 'Combat starting!',
       });
+
+      // Note: Phase change will be automatically synced via Colyseus onStateChange
 
       // TODO: Simulate combat
     } else if (this.state.phase === 'COMBAT') {
@@ -697,22 +906,18 @@ export class AutoChessRoom extends Room<GameState> {
       this.elapsedTime = 0;
 
       console.log(`🔄 Round ${this.state.roundNumber} - PREPARATION phase`);
-      this.broadcast('phase_changed', {
-        phase: 'PREPARATION',
-        roundNumber: this.state.roundNumber,
-        message: `Round ${this.state.roundNumber} - Prepare your team!`,
-      });
+      // Note: Phase change will be automatically synced via Colyseus onStateChange
 
       // Give income and regenerate shops for all players
-      this.state.players.forEach((player, sessionId) => {
+      this.state.players.forEach((player) => {
         // Grant 5 gold income each round
         player.gold += 5;
         console.log(`💰 Player ${player.username} received 5 gold (total: ${player.gold})`);
-
-        // Regenerate shop
-        const characterIds = CHARACTERS.map(c => c.id);
-        this.state.generateShopForPlayer(sessionId, characterIds);
       });
+
+      // Regenerate shops for all players
+      const characterIds = characterService.getAllCharacterIds();
+      this.state.regenerateAllShops(characterIds);
     }
   }
 }

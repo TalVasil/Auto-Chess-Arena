@@ -77,9 +77,9 @@ export class CombatService {
         const player2Id = availablePlayers.splice(validOpponentIndex, 1)[0];
         matchups.push({ player1Id, player2Id });
 
-        // Update histories
-        this.updatePlayerHistory(player1Id, player2Id);
-        this.updatePlayerHistory(player2Id, player1Id);
+        // Update histories (pass total player count)
+        this.updatePlayerHistory(player1Id, player2Id, playerIds.length);
+        this.updatePlayerHistory(player2Id, player1Id, playerIds.length);
 
         console.log(`🤝 Matchup: ${player1Id} vs ${player2Id}`);
       } else {
@@ -88,8 +88,8 @@ export class CombatService {
           const player2Id = availablePlayers.shift()!;
           matchups.push({ player1Id, player2Id });
 
-          this.updatePlayerHistory(player1Id, player2Id);
-          this.updatePlayerHistory(player2Id, player1Id);
+          this.updatePlayerHistory(player1Id, player2Id, playerIds.length);
+          this.updatePlayerHistory(player2Id, player1Id, playerIds.length);
 
           console.log(`🤝 Matchup (fallback): ${player1Id} vs ${player2Id}`);
         } else {
@@ -103,7 +103,11 @@ export class CombatService {
 
     // Handle remaining player (bye round)
     if (availablePlayers.length === 1) {
-      console.log(`🛡️ Player ${availablePlayers[0]} gets a BYE round`);
+      const byePlayer = availablePlayers[0];
+      console.log(`🛡️ Player ${byePlayer} gets a BYE round`);
+
+      // Clear their history so they can fight anyone next round
+      this.resetPlayerHistory(byePlayer);
     }
 
     console.log(`✅ Created ${matchups.length} matchups\n`);
@@ -135,9 +139,11 @@ export class CombatService {
   }
 
   /**
-   * Update player's opponent history (keep last 2)
+   * Update player's opponent history with dynamic limit based on player count
+   * - 6+ players: keep last 2 opponents
+   * - 3-5 players: keep last 1 opponent
    */
-  private updatePlayerHistory(playerId: string, opponentId: string): void {
+  private updatePlayerHistory(playerId: string, opponentId: string, totalPlayers: number): void {
     let history = this.playerHistories.get(playerId);
 
     if (!history) {
@@ -151,8 +157,14 @@ export class CombatService {
     // Add opponent to history
     history.lastOpponents.push(opponentId);
 
-    // Keep only last 2 opponents
-    if (history.lastOpponents.length > 2) {
+    // Determine history limit based on player count
+    // 6+ players: keep last 2 opponents
+    // 3-5 players: keep last 1 opponent
+    // 2 players: no limit needed (always fight same person)
+    const historyLimit = totalPlayers >= 6 ? 2 : 1;
+
+    // Keep only last N opponents
+    while (history.lastOpponents.length > historyLimit) {
       history.lastOpponents.shift();
     }
   }

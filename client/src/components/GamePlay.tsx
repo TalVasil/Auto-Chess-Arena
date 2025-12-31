@@ -1,21 +1,124 @@
-import { useState } from 'react';
-import { Box, VStack, HStack, Text } from '@chakra-ui/react';
+import { useState, useEffect } from 'react';
+import { Box, VStack, HStack, Text, Button } from '@chakra-ui/react';
 import { useGameStore } from '../store/gameStore';
 import { Arena } from './Arena';
 import { Bench } from './Bench';
 import { Shop } from './Shop';
-import { CHARACTERS } from '../../../shared/src/constants/characterData';
 import { gameClient } from '../network/GameClient';
+import { LEVEL_UP_XP, PLAYER_CONFIG } from '../../../shared/src/constants/gameConfig';
 
 export function GamePlay() {
-  const { phase, roundNumber, timer, players, mySessionId } = useGameStore();
+  const {
+    phase,
+    roundNumber,
+    timer,
+    players,
+    mySessionId,
+    myOpponentId,
+    myOpponentName,
+    allCharacters,
+    logout,
+    leaveGame
+  } = useGameStore();
   const [selectedBenchIndex, setSelectedBenchIndex] = useState<number | null>(null);
   const [selectedArenaPos, setSelectedArenaPos] = useState<{row: number, col: number} | null>(null);
   const [cursorIcon, setCursorIcon] = useState<string | null>(null);
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
+  const [levelUpModal, setLevelUpModal] = useState<{ isOpen: boolean; level: number; message: string }>({
+    isOpen: false,
+    level: 0,
+    message: ''
+  });
 
   // Get my player info
   const myPlayer = players.find((p) => p.id === mySessionId);
+
+  // Get opponent player info
+  const opponentPlayer = players.find((p) => p.id === myOpponentId);
+
+  // Debug logging for opponent data
+  console.log('🔍 DEBUG - Combat Display:', {
+    phase,
+    mySessionId,
+    myOpponentId,
+    myOpponentName,
+    opponentPlayer: opponentPlayer ? {
+      id: opponentPlayer.id,
+      username: opponentPlayer.username,
+      boardSize: opponentPlayer.board?.length
+    } : null,
+    totalPlayers: players.length
+  });
+
+  // Merge my board (right side) with opponent's board (left side) for combat display
+  const getCombinedBoard = () => {
+    type BoardPosition = { row: number; col: number; character?: any };
+    const combined: BoardPosition[] = [];
+
+    // Add opponent's units to LEFT side (columns 0-3)
+    if (opponentPlayer?.board) {
+      opponentPlayer.board.forEach(pos => {
+        // Mirror opponent's position: they see their units on right (5-8)
+        // We need to show them on our left (0-3)
+        // Mapping: opponent's col 5→3, 6→2, 7→1, 8→0
+        const mirroredCol = 8 - pos.col;
+
+        combined.push({
+          row: pos.row,
+          col: mirroredCol,
+          character: pos.character
+        });
+      });
+    }
+
+    // Add my units to RIGHT side (columns 5-8) - unchanged
+    if (myPlayer?.board) {
+      combined.push(...myPlayer.board);
+    }
+
+    return combined;
+  };
+
+  // Handle cancel game - cancel for ALL players
+  const handleCancelGame = () => {
+    // Send cancel message to server (will disconnect everyone)
+    gameClient.send('cancel_game');
+    // Server will broadcast game_cancelled and disconnect all players
+  };
+
+  // Handle logout - disconnect and logout
+  const handleLogout = async () => {
+    await logout();
+    // The AuthWrapper will detect we're no longer authenticated and show LoginScreen
+  };
+
+  // Listen for level-up and game cancellation messages from server
+  useEffect(() => {
+    const room = gameClient.getRoom();
+    if (!room) return;
+
+    const handleLevelUp = (data: { newLevel: number; message: string }) => {
+      setLevelUpModal({
+        isOpen: true,
+        level: data.newLevel,
+        message: data.message
+      });
+    };
+
+    const handleGameCancelled = (data: { message: string }) => {
+      console.log('🚫 Game cancelled:', data.message);
+      // Server will disconnect us, GameLobby will auto-reconnect to NEW room
+      leaveGame();
+    };
+
+    room.onMessage('level_up', handleLevelUp);
+    room.onMessage('game_cancelled', handleGameCancelled);
+
+    return () => {
+      room.onMessage('level_up', () => {}); // Cleanup
+      room.onMessage('game_cancelled', () => {}); // Cleanup
+    };
+  }, [leaveGame]);
 
   // Track mouse position for custom cursor
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -33,7 +136,10 @@ export function GamePlay() {
 
     setSelectedBenchIndex(index);
     setSelectedArenaPos(null); // Clear any arena selection
-    setCursorIcon('⚔️'); // Show sword icon on cursor
+
+    // Get the character's emoji for the cursor
+    const character = myPlayer?.bench[index];
+    setCursorIcon(character?.emoji || '⚔️');
   };
 
   // Handle clicking on empty bench slot to place arena character
@@ -137,7 +243,8 @@ export function GamePlay() {
       // Select this arena character for moving
       setSelectedArenaPos({ row, col });
       setSelectedBenchIndex(null);
-      setCursorIcon('⚔️'); // Show sword icon on cursor
+      // Get the character's emoji for the cursor
+      setCursorIcon(existingCharacter.character?.emoji || '⚔️');
     } else if (selectedArenaPos && !existingCharacter) {
       // Move selected arena character to empty cell
       gameClient.send('move_on_board', {
@@ -209,6 +316,15 @@ export function GamePlay() {
           <Box bg="rgba(0, 191, 255, 0.2)" px={3} py={2} borderRadius="md" border="1px solid #00bfff">
             <Text fontSize="sm" color="#00bfff" fontWeight="bold">
               📊 XP: {myPlayer.xp}
+              {myPlayer.level < PLAYER_CONFIG.MAX_LEVEL ? (
+                <Text as="span" fontSize="xs" color="#88d8ff" ml={2}>
+                  ({(LEVEL_UP_XP as any)[myPlayer.level + 1] - myPlayer.xp} to lvl {myPlayer.level + 1})
+                </Text>
+              ) : (
+                <Text as="span" fontSize="xs" color="#88d8ff" ml={2}>
+                  (MAX)
+                </Text>
+              )}
             </Text>
           </Box>
         </HStack>
@@ -256,21 +372,6 @@ export function GamePlay() {
             ⏯️
           </button>
           <button
-            onClick={() => gameClient.send('debug_toggle_phase')}
-            style={{
-              background: 'rgba(138, 43, 226, 0.2)',
-              border: '1px solid #8a2be2',
-              color: '#8a2be2',
-              padding: '0.5rem 0.75rem',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '0.8rem'
-            }}
-          >
-            🔄
-          </button>
-          <button
             onClick={() => gameClient.send('debug_next_round')}
             style={{
               background: 'rgba(0, 255, 127, 0.2)',
@@ -300,14 +401,88 @@ export function GamePlay() {
           >
             🔄
           </button>
+          <button
+            onClick={handleCancelGame}
+            style={{
+              background: 'rgba(255, 255, 0, 0.2)',
+              border: '1px solid #ffff00',
+              color: '#ffff00',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '0.8rem'
+            }}
+          >
+            🏠
+          </button>
+          <button
+            onClick={handleLogout}
+            style={{
+              background: 'rgba(255, 0, 255, 0.2)',
+              border: '1px solid #ff00ff',
+              color: '#ff00ff',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '0.8rem'
+            }}
+          >
+            🚪
+          </button>
         </HStack>
       </HStack>
 
       {/* Main Game Area - Arena, Bench, and Shop stacked vertically */}
       <VStack gap={2} maxW="1400px" mx="auto" alignItems="center">
+        {/* Team Size Indicator */}
+        <Box
+          bg={
+            selectedBenchIndex !== null
+              ? myPlayer.board.length >= myPlayer.level
+                ? 'rgba(255, 0, 0, 0.3)'
+                : 'rgba(0, 255, 0, 0.3)'
+              : 'rgba(255, 255, 255, 0.1)'
+          }
+          px={4}
+          py={2}
+          borderRadius="md"
+          border={
+            selectedBenchIndex !== null
+              ? myPlayer.board.length >= myPlayer.level
+                ? '2px solid #ff0000'
+                : '2px solid #00ff00'
+              : '1px solid rgba(255, 255, 255, 0.3)'
+          }
+        >
+          <Text
+            fontSize="sm"
+            fontWeight="bold"
+            color={
+              selectedBenchIndex !== null
+                ? myPlayer.board.length >= myPlayer.level
+                  ? '#ff6666'
+                  : '#66ff66'
+                : 'white'
+            }
+          >
+            Units: {myPlayer.board.length}/{myPlayer.level}
+          </Text>
+        </Box>
+
+        {/* Combat Opponent Display */}
+        {phase === 'COMBAT' && myOpponentName && (
+          <Box textAlign="center" mb={2}>
+            <Text fontSize="lg" fontWeight="bold" color="red.400">
+              ⚔️ Fighting: {myOpponentName}
+            </Text>
+          </Box>
+        )}
+
         {/* Arena */}
         <Arena
-          boardPositions={myPlayer.board || []}
+          boardPositions={phase === 'COMBAT' ? getCombinedBoard() : (myPlayer.board || [])}
           selectedArenaPos={selectedArenaPos}
           onCellClick={handleArenaCellClick}
         />
@@ -326,9 +501,10 @@ export function GamePlay() {
         {/* Shop */}
         <Shop
           characters={myPlayer.shopCharacterIds.map(id =>
-            CHARACTERS.find(c => c.id === id)!
+            allCharacters.find(c => c.id === id)!
           )}
           playerGold={myPlayer.gold}
+          playerLevel={myPlayer.level}
           phase={phase}
           selectedBenchIndex={selectedBenchIndex}
           benchCharacters={myPlayer.bench as any}
@@ -352,6 +528,92 @@ export function GamePlay() {
           onSellArenaCharacter={handleSellArenaCharacter}
         />
       </VStack>
+
+      {/* Level Up Modal */}
+      {levelUpModal.isOpen ? (
+        <>
+          {/* Backdrop */}
+          <Box
+            position="fixed"
+            top={0}
+            left={0}
+            right={0}
+            bottom={0}
+            bg="rgba(0, 0, 0, 0.7)"
+            backdropFilter="blur(10px)"
+            zIndex={1000}
+            onClick={() => setLevelUpModal({ ...levelUpModal, isOpen: false })}
+          />
+
+          {/* Modal */}
+          <Box
+            position="fixed"
+            top="50%"
+            left="50%"
+            transform="translate(-50%, -50%)"
+            bg="linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)"
+            borderColor="#8a2be2"
+            borderWidth="2px"
+            borderRadius="15px"
+            maxW="500px"
+            w="90%"
+            p={8}
+            zIndex={1001}
+            boxShadow="0 8px 32px rgba(138, 43, 226, 0.5)"
+          >
+            {/* Close button */}
+            <Box
+              position="absolute"
+              top={4}
+              right={4}
+              cursor="pointer"
+              onClick={() => setLevelUpModal({ ...levelUpModal, isOpen: false })}
+              color="white"
+              fontSize="xl"
+              _hover={{ color: '#8a2be2' }}
+            >
+              ✕
+            </Box>
+
+            {/* Header */}
+            <Text
+              fontSize="2xl"
+              fontWeight="bold"
+              color="#8a2be2"
+              textAlign="center"
+              mb={6}
+            >
+              🎉 Level Up! 🎉
+            </Text>
+
+            {/* Body */}
+            <VStack gap={3}>
+              <Text color="white" fontSize="xl" fontWeight="bold" textAlign="center">
+                You reached Level {levelUpModal.level}!
+              </Text>
+              <Text color="#88d8ff" fontSize="md" textAlign="center">
+                {levelUpModal.message}
+              </Text>
+            </VStack>
+
+            {/* Footer */}
+            <Box display="flex" justifyContent="center" mt={6}>
+              <Button
+                bg="linear-gradient(135deg, #8a2be2 0%, #6a1bb2 100%)"
+                color="white"
+                onClick={() => setLevelUpModal({ ...levelUpModal, isOpen: false })}
+                size="lg"
+                _hover={{
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 8px 30px rgba(138, 43, 226, 0.6)',
+                }}
+              >
+                Got it!
+              </Button>
+            </Box>
+          </Box>
+        </>
+      ) : null}
     </Box>
   );
 }

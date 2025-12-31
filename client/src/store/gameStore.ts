@@ -8,6 +8,7 @@ import type { ICharacter } from '../../../shared/src/types/game.types';
 export interface Character {
   id: string;
   name: string;
+  emoji: string;
   cost: number;
   rarity: string;
   attack: number;
@@ -64,6 +65,20 @@ export interface GameStoreState {
   mySessionId: string | null;
   roomId: string | null;
 
+  // Combat matchup info
+  myOpponentId: string | null;
+  myOpponentName: string | null;
+  currentMatchups: Array<{
+    player1Id: string;
+    player1Name: string;
+    player2Id: string;
+    player2Name: string;
+  }>;
+
+  // Characters (loaded from API)
+  allCharacters: ICharacter[];
+  isCharactersLoaded: boolean;
+
   // Auth actions
   setAuth: (data: {
     userId: number;
@@ -78,6 +93,10 @@ export interface GameStoreState {
   // Game actions
   connect: () => Promise<void>;
   disconnect: () => void;
+  leaveGame: () => void;
+
+  // Character actions
+  loadCharacters: () => Promise<void>;
 }
 
 export const useGameStore = create<GameStoreState>()(
@@ -105,8 +124,44 @@ export const useGameStore = create<GameStoreState>()(
       mySessionId: null,
       roomId: null,
 
+      // Combat matchup state
+      myOpponentId: null,
+      myOpponentName: null,
+      currentMatchups: [],
+
+      // Characters
+      allCharacters: [],
+      isCharactersLoaded: false,
+
       // Auth actions
       setAuth: (data) => {
+        const currentUserId = get().userId;
+
+        // Check if this is a DIFFERENT user logging in
+        if (currentUserId !== null && currentUserId !== data.userId) {
+          console.log('🔄 Different user logging in - switching sessions');
+
+          // Disconnect from previous user's game session
+          gameClient.disconnect();
+
+          // Clear the PREVIOUS user's session (using old userId)
+          gameClient.clearStoredSession();
+
+          // Reset game state for new user
+          set({
+            mySessionId: null,
+            roomId: null,
+            players: [],
+            phase: 'WAITING',
+            roundNumber: 0,
+            timer: 30,
+          });
+        } else if (currentUserId === data.userId) {
+          console.log('✅ Same user logging back in - will try to reconnect');
+        } else {
+          console.log('🆕 First login');
+        }
+
         set({
           isAuthenticated: true,
           userId: data.userId,
@@ -131,6 +186,9 @@ export const useGameStore = create<GameStoreState>()(
 
         // Disconnect from game
         gameClient.disconnect();
+
+        // Clear Colyseus session data from localStorage
+        gameClient.clearStoredSession();
 
         // Clear auth state
         set({
@@ -210,18 +268,57 @@ export const useGameStore = create<GameStoreState>()(
 
           if (shouldReconnect) {
             console.log('🔄 Attempting to reconnect to previous game...');
-            try {
-              room = await gameClient.connect(accessToken || undefined, true);
-            } catch (reconnectError) {
-              // Reconnection failed (token expired, server restarted, etc.)
-              // The GameClient already cleared the token, so now join a fresh game
-              console.log('⚠️ Reconnection failed, joining new game instead...');
-              room = await gameClient.connect(accessToken || undefined, false);
-            }
+            // Try to reconnect - if it fails, throw error (don't auto-join new game)
+            room = await gameClient.connect(accessToken || undefined, true);
           } else {
             console.log('🆕 Joining new game...');
             room = await gameClient.connect(accessToken || undefined, false);
           }
+
+      // IMPORTANT: Set up message listeners IMMEDIATELY before any other code
+      // This ensures we catch messages sent during the onJoin handler
+
+      // Listen for combat matchups - SET UP FIRST!
+      room.onMessage('combat_matchups', (data: any) => {
+        console.log('⚔️ Combat matchups received:', data);
+
+        const { matchups, roundNumber } = data;
+        const mySessionId = get().mySessionId || room.sessionId;
+
+        // Find which matchup I'm in
+        const myMatchup = matchups.find(
+          (m: any) => m.player1Id === mySessionId || m.player2Id === mySessionId
+        );
+
+        if (myMatchup) {
+          // Determine who my opponent is
+          const opponentId = myMatchup.player1Id === mySessionId
+            ? myMatchup.player2Id
+            : myMatchup.player1Id;
+          const opponentName = myMatchup.player1Id === mySessionId
+            ? myMatchup.player2Name
+            : myMatchup.player1Name;
+
+          set({
+            myOpponentId: opponentId,
+            myOpponentName: opponentName,
+            currentMatchups: matchups,
+          });
+
+          console.log(`🎯 Round ${roundNumber}: I'm fighting ${opponentName} (${opponentId})`);
+        } else {
+          // I got a BYE round
+          console.log(`🛡️ Round ${roundNumber}: I have a BYE round (no opponent)`);
+          set({
+            myOpponentId: null,
+            myOpponentName: null,
+            currentMatchups: matchups,
+          });
+        }
+      });
+
+      // Note: Phase changes are now handled automatically via onStateChange
+      // Note: Game start is detected via onStateChange when phase becomes PREPARATION
 
       // Store our session ID and room ID
       set({
@@ -248,6 +345,7 @@ export const useGameStore = create<GameStoreState>()(
             bench.push({
               id: char.id,
               name: char.name,
+              emoji: char.emoji,
               cost: char.cost,
               rarity: char.rarity,
               attack: char.attack,
@@ -270,6 +368,7 @@ export const useGameStore = create<GameStoreState>()(
               character: pos.character ? {
                 id: pos.character.id,
                 name: pos.character.name,
+                emoji: pos.character.emoji,
                 cost: pos.character.cost,
                 rarity: pos.character.rarity,
                 attack: pos.character.attack,
@@ -295,18 +394,20 @@ export const useGameStore = create<GameStoreState>()(
           });
         });
 
-        set({
+        // Clear opponent data when returning to PREPARATION phase
+        const updates: any = {
           phase: state.phase,
           roundNumber: state.roundNumber,
           timer: state.timer,
           players: playersArray,
-        });
-      });
+        };
 
-      // Listen for game start message
-      room.onMessage('game_started', (message) => {
-        console.log('🎮 Game started!', message);
-        // The phase change will be picked up by onStateChange
+        if (state.phase === 'PREPARATION') {
+          updates.myOpponentId = null;
+          updates.myOpponentName = null;
+        }
+
+        set(updates);
       });
 
       console.log('✅ Game store connected to server');
@@ -343,7 +444,45 @@ export const useGameStore = create<GameStoreState>()(
           mySessionId: null,
           roomId: null,
           players: [],
+          myOpponentId: null,
+          myOpponentName: null,
+          currentMatchups: [],
         });
+      },
+
+      // Leave game intentionally - clears session so you don't auto-reconnect
+      leaveGame: () => {
+        gameClient.disconnect();
+        gameClient.clearStoredSession(); // Clear reconnection token
+        set({
+          connectionStatus: 'disconnected',
+          isConnected: false,
+          isConnecting: false,
+          mySessionId: null,
+          roomId: null,
+          players: [],
+          myOpponentId: null,
+          myOpponentName: null,
+          currentMatchups: [],
+          phase: 'WAITING',
+          roundNumber: 0,
+          timer: 30,
+        });
+      },
+
+      // Load characters from API
+      loadCharacters: async () => {
+        try {
+          const response = await fetch('http://localhost:2567/api/characters');
+          const data = await response.json();
+          set({
+            allCharacters: data.characters,
+            isCharactersLoaded: true
+          });
+          console.log('✅ Loaded characters from API:', data.characters.length);
+        } catch (error) {
+          console.error('❌ Failed to load characters:', error);
+        }
       },
     }),
     {

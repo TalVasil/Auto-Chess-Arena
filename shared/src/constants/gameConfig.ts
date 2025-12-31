@@ -42,18 +42,25 @@ export const ECONOMY_CONFIG = {
   MAX_INTEREST: 5,
 };
 
-// Level Up Requirements
+// XP Configuration
+export const XP_CONFIG = {
+  XP_PER_ROUND: 2, // XP awarded after each combat phase
+  XP_BUY_COST: 4, // Gold cost to buy XP
+  XP_BUY_AMOUNT: 4, // XP gained from purchase
+};
+
+// Level Up Requirements (cumulative XP needed to reach each level)
 export const LEVEL_UP_XP = {
   1: 0,
   2: 2,
-  3: 6,
-  4: 10,
-  5: 20,
-  6: 36,
-  7: 56,
-  8: 80,
-  9: 108,
-  10: 999, // Max level
+  3: 4,
+  4: 12,
+  5: 24,
+  6: 44,
+  7: 79,
+  8: 119,
+  9: 179,
+  10: 249, // Max level
 };
 
 // Damage Configuration

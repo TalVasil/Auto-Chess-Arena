@@ -1,11 +1,13 @@
 import { ICharacter } from '../../../shared/src/types/game.types';
 import { Character } from '../store/gameStore';
 import { gameClient } from '../network/GameClient';
+import { XP_CONFIG, PLAYER_CONFIG } from '../../../shared/src/constants/gameConfig';
 import './Shop.css';
 
 interface ShopProps {
   characters: ICharacter[];
   playerGold: number;
+  playerLevel: number;
   phase: string;
   selectedBenchIndex: number | null;
   benchCharacters: Character[];
@@ -16,7 +18,7 @@ interface ShopProps {
   onSellArenaCharacter?: () => void;
 }
 
-export function Shop({ characters, playerGold, phase, selectedBenchIndex, benchCharacters, selectedArenaPos, arenaCharacters, onBuy, onSellSelectedCharacter, onSellArenaCharacter }: ShopProps) {
+export function Shop({ characters, playerGold, playerLevel, phase, selectedBenchIndex, benchCharacters, selectedArenaPos, arenaCharacters, onBuy, onSellSelectedCharacter, onSellArenaCharacter }: ShopProps) {
   const handleBuy = (character: ICharacter) => {
     if (playerGold >= character.cost) {
       onBuy(character.id);
@@ -26,6 +28,10 @@ export function Shop({ characters, playerGold, phase, selectedBenchIndex, benchC
 
   const handleReroll = () => {
     gameClient.send('reroll_shop');
+  };
+
+  const handleBuyXP = () => {
+    gameClient.send('buy_xp');
   };
 
   const getRarityColor = (rarity: string): string => {
@@ -120,8 +126,12 @@ export function Shop({ characters, playerGold, phase, selectedBenchIndex, benchC
             >
               🔄 Reroll<br/>(2g)
             </button>
-            <button className="shop-action-btn" disabled>
-              ⭐ Buy XP<br/>(4g)
+            <button
+              className="shop-action-btn"
+              disabled={playerGold < XP_CONFIG.XP_BUY_COST || playerLevel >= PLAYER_CONFIG.MAX_LEVEL}
+              onClick={handleBuyXP}
+            >
+              ⭐ Buy XP<br/>({XP_CONFIG.XP_BUY_COST}g)
             </button>
           </div>
         </div>
@@ -137,10 +147,12 @@ export function Shop({ characters, playerGold, phase, selectedBenchIndex, benchC
               className={`character-card ${!canAfford ? 'disabled' : ''}`}
               style={{
                 borderColor: getRarityColor(character.rarity),
-                backgroundImage: `url('/characters/${character.id}.png')`,
               }}
             >
               <div className="character-info">
+                <div className="character-emoji" style={{ fontSize: '3rem', textAlign: 'center', padding: '0.5rem' }}>
+                  {character.emoji}
+                </div>
                 <div
                   className="character-name"
                   style={{ color: getRarityColor(character.rarity) }}

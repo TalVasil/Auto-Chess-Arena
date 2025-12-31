@@ -1,10 +1,23 @@
 import { ICharacter, CharacterRarity, AbilityEffect } from '../types/game.types';
 
+// =====================================================
+// DEPRECATED: This file is no longer used
+// =====================================================
+// Characters are now loaded from the PostgreSQL database
+//
+// Server: Uses CharacterService (loads from DB on startup)
+// Client: Fetches from GET /api/characters (loads once on app mount)
+//
+// This file is kept for reference only
+// DO NOT IMPORT THIS FILE IN NEW CODE
+// =====================================================
+
 // Sample character pool for the game
 export const CHARACTERS: ICharacter[] = [
   {
     id: 'warrior_1',
     name: 'Knight',
+    emoji: '🛡️',
     cost: 1,
     rarity: CharacterRarity.COMMON,
     attack: 50,
@@ -26,6 +39,7 @@ export const CHARACTERS: ICharacter[] = [
   {
     id: 'archer_1',
     name: 'Archer',
+    emoji: '🏹',
     cost: 1,
     rarity: CharacterRarity.COMMON,
     attack: 60,
@@ -46,6 +60,7 @@ export const CHARACTERS: ICharacter[] = [
   {
     id: 'mage_1',
     name: 'Mage',
+    emoji: '🔮',
     cost: 2,
     rarity: CharacterRarity.UNCOMMON,
     attack: 70,
@@ -66,6 +81,7 @@ export const CHARACTERS: ICharacter[] = [
   {
     id: 'tank_1',
     name: 'Paladin',
+    emoji: '⚔️',
     cost: 2,
     rarity: CharacterRarity.UNCOMMON,
     attack: 40,
@@ -86,6 +102,7 @@ export const CHARACTERS: ICharacter[] = [
   {
     id: 'assassin_1',
     name: 'Assassin',
+    emoji: '🗡️',
     cost: 3,
     rarity: CharacterRarity.RARE,
     attack: 90,
@@ -106,6 +123,7 @@ export const CHARACTERS: ICharacter[] = [
   {
     id: 'healer_1',
     name: 'Cleric',
+    emoji: '✨',
     cost: 3,
     rarity: CharacterRarity.RARE,
     attack: 30,
@@ -126,6 +144,7 @@ export const CHARACTERS: ICharacter[] = [
   {
     id: 'dragon_knight',
     name: 'Dragon Knight',
+    emoji: '🐉',
     cost: 4,
     rarity: CharacterRarity.EPIC,
     attack: 100,
@@ -146,6 +165,7 @@ export const CHARACTERS: ICharacter[] = [
   {
     id: 'archmage',
     name: 'Archmage',
+    emoji: '🧙',
     cost: 5,
     rarity: CharacterRarity.LEGENDARY,
     attack: 120,
