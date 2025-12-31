@@ -119,6 +119,22 @@ export class AutoChessRoom extends Room<GameState> {
       }
     });
 
+    // Handle cancel game - any player can cancel, affects all players
+    this.onMessage('cancel_game', (client) => {
+      const player = this.state.players.get(client.sessionId);
+      console.log(`🚫 Game cancelled by ${player?.username || client.sessionId}`);
+
+      // Broadcast to all clients that game was cancelled
+      this.broadcast('game_cancelled', {
+        cancelledBy: player?.username || 'Unknown',
+      });
+
+      // Disconnect all players after short delay (allows clients to receive message)
+      setTimeout(() => {
+        this.disconnect();
+      }, 500);
+    });
+
     // Sell character from bench - refunds gold
     this.onMessage('sell_character', (client, message: { benchIndex: number }) => {
       const player = this.state.players.get(client.sessionId);
