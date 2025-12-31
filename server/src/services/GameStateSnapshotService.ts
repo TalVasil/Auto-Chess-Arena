@@ -24,8 +24,8 @@ class GameStateSnapshotService {
       try {
         const state = getState();
 
-        // Skip empty rooms or rooms in waiting phase with no players
-        if (!state || state.players.size === 0) {
+        // Skip empty rooms or rooms in waiting/lobby phase
+        if (!state || state.players.size === 0 || state.phase === 'WAITING') {
           return;
         }
 
@@ -167,23 +167,12 @@ class GameStateSnapshotService {
    * Finalize a game session (mark as inactive)
    * Called when room is disposed
    */
-  async finalizeSession(roomId: string, state?: GameState): Promise<void> {
+  async finalizeSession(roomId: string): Promise<void> {
     try {
-      // Save final snapshot
-      if (state && state.players.size > 0) {
-        const gameStateJson = this.serializeGameState(state);
-        await query(
-          `UPDATE game_sessions
-           SET game_state_json = $1, is_active = false, last_updated_at = NOW()
-           WHERE room_id = $2`,
-          [gameStateJson, roomId]
-        );
-        console.log(`✅ Final snapshot saved for room ${roomId}, marked inactive`);
-      } else {
-        // Clean up empty sessions
-        await query(`DELETE FROM game_sessions WHERE room_id = $1`, [roomId]);
-        console.log(`🗑️ Deleted empty session for room ${roomId}`);
-      }
+      // Delete the session immediately when game ends
+      // We don't need to keep completed games in database
+      await query(`DELETE FROM game_sessions WHERE room_id = $1`, [roomId]);
+      console.log(`🗑️ Deleted completed game session for room ${roomId}`);
     } catch (error) {
       console.error(`❌ Failed to finalize session for room ${roomId}:`, error);
     }

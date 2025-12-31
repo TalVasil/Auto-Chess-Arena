@@ -11,6 +11,7 @@ export class AutoChessRoom extends Room<GameState> {
   maxClients = 8;
   private elapsedTime: number = 0; // Accumulator for timer countdown
   private timerPaused: boolean = false; // Debug flag to pause timer
+  private reconnectionPromises: Map<string, Promise<Client>> = new Map(); // Track reconnection promises by userId
 
   onCreate(options: any) {
     console.log('AutoChessRoom created!', options);
@@ -18,6 +19,10 @@ export class AutoChessRoom extends Room<GameState> {
     // Enable reconnection - keep seat reserved for 30 minutes (1800 seconds)
     // Matches the snapshot expiry time so players can always reconnect
     this.setSeatReservationTime(1800);
+
+    // Keep room unlocked to allow reconnection fallback (session transfer)
+    // Security is handled in onAuth - only existing players can join mid-game
+    this.unlock();
 
     // PHASE 1B: Check if this is a recovery (server restart)
     if (options.recover && options.snapshotData) {
@@ -49,6 +54,12 @@ export class AutoChessRoom extends Room<GameState> {
 
       if (!player) {
         console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      // Only allow buying during PREPARATION phase
+      if (this.state.phase !== 'PREPARATION') {
+        client.send('error', { message: 'Can only buy characters during preparation phase' });
         return;
       }
 
@@ -145,6 +156,12 @@ export class AutoChessRoom extends Room<GameState> {
         return;
       }
 
+      // Only allow selling during PREPARATION phase
+      if (this.state.phase !== 'PREPARATION') {
+        client.send('error', { message: 'Can only sell characters during preparation phase' });
+        return;
+      }
+
       const { benchIndex } = message;
 
       // Validate bench index
@@ -178,6 +195,12 @@ export class AutoChessRoom extends Room<GameState> {
 
       if (!player) {
         console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      // Only allow rerolling during PREPARATION phase
+      if (this.state.phase !== 'PREPARATION') {
+        client.send('error', { message: 'Can only reroll shop during preparation phase' });
         return;
       }
 
@@ -619,6 +642,19 @@ export class AutoChessRoom extends Room<GameState> {
 
       console.log(`✅ Authenticated user: ${decoded.username} (ID: ${decoded.userId})`);
 
+      // Security check: If game already started, only allow returning players
+      if (this.state && this.state.phase !== 'WAITING') {
+        const isReturningPlayer = Array.from(this.state.players.values())
+          .some(p => p.userId === decoded.userId);
+
+        if (!isReturningPlayer) {
+          console.error(`🚫 New player ${decoded.username} attempted to join game in progress (Round ${this.state.roundNumber}, ${this.state.phase} phase) - REJECTED`);
+          throw new Error('Game already in progress - only returning players can rejoin');
+        }
+
+        console.log(`✅ Returning player ${decoded.username} allowed to rejoin (game in progress)`);
+      }
+
       // Return user data to be used in onJoin
       return {
         userId: decoded.userId,
@@ -746,6 +782,8 @@ export class AutoChessRoom extends Room<GameState> {
         }
 
         // Player data is preserved, nothing more to do!
+        // Ensure room stays unlocked for future reconnections
+        this.unlock();
         return;
       }
     }
@@ -761,6 +799,9 @@ export class AutoChessRoom extends Room<GameState> {
     this.state.generateShopForPlayer(client.sessionId, characterIds);
 
     console.log(`👥 Total players: ${this.state.players.size}/8`);
+
+    // Ensure room stays unlocked for future reconnections
+    this.unlock();
   }
 
   async onLeave(client: Client, consented: boolean) {
@@ -786,27 +827,15 @@ export class AutoChessRoom extends Room<GameState> {
       // Accidental disconnect - keep player data for reconnection
       console.log(`⏳ ${playerName} disconnected accidentally, keeping data for reconnection`);
 
-      // Allow reconnection for this client
-      try {
-        // Don't await - this returns a promise that resolves when player reconnects
-        this.allowReconnection(client, 1800).then(() => {
-          console.log(`✅ ${playerName} successfully reconnected`);
-        }).catch((error) => {
-          // Reconnection window expired - remove player from game
-          console.log(`⏰ Reconnection window expired for ${playerName}`);
-          console.log('🗑️ Removing player from game (timeout)');
-          this.state.removePlayer(client.sessionId);
-          console.log(`👥 Total players after cleanup: ${this.state.players.size}/8`);
-        });
-        console.log(`✅ Reconnection window opened for ${playerName} (30 minutes)`);
-      } catch (error: any) {
-        console.error('❌ Failed to allow reconnection:', error);
-        console.error('❌ Error details:', {
-          message: error?.message,
-          stack: error?.stack,
-          name: error?.name
-        });
+      // Check if this user already has a pending reconnection (rapid disconnect/reconnect)
+      const existingPromise = this.reconnectionPromises.get(String(player.userId));
+      if (existingPromise) {
+        console.log(`⚠️ ${playerName} already has a pending reconnection, skipping duplicate reservation`);
+        return;
       }
+
+      // Allow reconnection for this client (async pattern recommended by Colyseus)
+      this.handleReconnection(client, player, playerName);
 
       // Player data stays in this.state.players
       // Colyseus will automatically clean it up after seat reservation time expires
@@ -821,8 +850,34 @@ export class AutoChessRoom extends Room<GameState> {
     // Stop periodic snapshots
     gameStateSnapshotService.stopSnapshots(this.roomId);
 
-    // Save final snapshot and mark session as inactive
-    await gameStateSnapshotService.finalizeSession(this.roomId, this.state);
+    // Delete game session from database (no need to keep completed games)
+    await gameStateSnapshotService.finalizeSession(this.roomId);
+  }
+
+  // Helper method for handling reconnection with proper async/await pattern
+  private async handleReconnection(client: Client, player: Player, playerName: string) {
+    try {
+      console.log(`✅ Reconnection window opened for ${playerName} (30 minutes)`);
+
+      // Track the reconnection promise by userId to prevent duplicate reservations
+      const reconnectionPromise = this.allowReconnection(client, 1800);
+      this.reconnectionPromises.set(String(player.userId), reconnectionPromise);
+
+      // Await the reconnection (recommended Colyseus pattern)
+      await reconnectionPromise;
+
+      // Client reconnected successfully
+      console.log(`✅ ${playerName} successfully reconnected`);
+      this.reconnectionPromises.delete(String(player.userId));
+
+    } catch (error) {
+      // Reconnection window expired or failed - remove player from game
+      console.log(`⏰ Reconnection window expired for ${playerName}`);
+      console.log('🗑️ Removing player from game (timeout)');
+      this.state.removePlayer(client.sessionId);
+      this.reconnectionPromises.delete(String(player.userId));
+      console.log(`👥 Total players after cleanup: ${this.state.players.size}/8`);
+    }
   }
 
   update(deltaTime: number) {
@@ -863,6 +918,9 @@ export class AutoChessRoom extends Room<GameState> {
   // Start the game when all players are ready
   startGame() {
     console.log('🚀 Game starting!');
+
+    // Keep room unlocked for reconnections (may be locked by Colyseus after onCreate)
+    this.unlock();
 
     // Change phase to PREPARATION
     this.state.phase = 'PREPARATION';
