@@ -240,12 +240,26 @@ export const useGameStore = create<GameStoreState>()(
         if (get().isConnecting) {
           console.log('⚠️ Connection already in progress, skipping duplicate call');
           // Wait for the existing connection to complete
-          return new Promise((resolve) => {
+          return new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              clearInterval(checkConnection);
+              reject(new Error('Connection timeout - waited 10 seconds'));
+            }, 10000); // 10 second timeout
+
             const checkConnection = setInterval(() => {
               const state = get();
               if (!state.isConnecting) {
                 clearInterval(checkConnection);
-                resolve();
+                clearTimeout(timeout);
+
+                // Check if connection succeeded or failed
+                if (state.isConnected) {
+                  console.log('✅ Duplicate call detected successful connection');
+                  resolve();
+                } else {
+                  console.log('❌ Duplicate call detected connection failure');
+                  reject(new Error(state.connectionError || 'Connection failed'));
+                }
               }
             }, 100);
           });
@@ -255,7 +269,7 @@ export const useGameStore = create<GameStoreState>()(
         set({ isConnecting: true });
 
         try {
-          const { accessToken } = get();
+          let { accessToken } = get();
 
           // Check if we have a saved session to reconnect to
           const savedSession = gameClient.getStoredSession();
@@ -263,6 +277,20 @@ export const useGameStore = create<GameStoreState>()(
           // If we have saved session, try to reconnect (true)
           // If no saved session, join new game (false)
           const shouldReconnect = savedSession !== null;
+
+          // IMPORTANT: If reconnecting, refresh the access token first
+          // This ensures we have a valid token even if server was down for >15min
+          if (shouldReconnect) {
+            console.log('🔄 Reconnecting - refreshing access token first...');
+            const tokenRefreshed = await get().verifyRefreshToken();
+            if (tokenRefreshed) {
+              // Get the NEW access token after refresh
+              accessToken = get().accessToken;
+              console.log('✅ Access token refreshed successfully');
+            } else {
+              console.log('⚠️ Failed to refresh token, will try with existing token');
+            }
+          }
 
           let room;
 
@@ -394,7 +422,7 @@ export const useGameStore = create<GameStoreState>()(
           });
         });
 
-        // Clear opponent data when returning to PREPARATION phase
+        // Build state updates
         const updates: any = {
           phase: state.phase,
           roundNumber: state.roundNumber,
@@ -402,10 +430,14 @@ export const useGameStore = create<GameStoreState>()(
           players: playersArray,
         };
 
+        // Clear opponent data ONLY when returning to PREPARATION phase
+        // Don't touch opponent data during COMBAT - it's set by combat_matchups message
         if (state.phase === 'PREPARATION') {
           updates.myOpponentId = null;
           updates.myOpponentName = null;
         }
+        // Don't include opponent fields in updates during COMBAT phase
+        // This prevents onStateChange from overwriting values set by combat_matchups
 
         set(updates);
       });

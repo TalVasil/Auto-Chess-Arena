@@ -28,6 +28,7 @@ class GameClient {
   private statusListeners: ((status: ConnectionStatus) => void)[] = [];
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
+  private lastToken: string | undefined = undefined; // Store token for automatic reconnection
 
   constructor() {
     const serverUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:2567';
@@ -37,6 +38,11 @@ class GameClient {
 
   // Connect to the game room
   async connect(token?: string, tryReconnect: boolean = false): Promise<Room<GameState>> {
+    // Save token for automatic reconnection
+    if (token) {
+      this.lastToken = token;
+    }
+
     // Prevent double connections
     if (this.room) {
       console.log('⚠️ Already connected to room');
@@ -44,8 +50,29 @@ class GameClient {
     }
 
     if (this.connectionStatus === 'connecting') {
-      console.log('⚠️ Already connecting to room');
-      throw new Error('Connection already in progress');
+      console.log('⚠️ Already connecting to room, waiting for completion...');
+
+      // Wait for the connection to complete instead of throwing error
+      return new Promise<Room<GameState>>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          clearInterval(checkInterval);
+          reject(new Error('Connection timeout - waited 10 seconds'));
+        }, 10000); // 10 second timeout
+
+        const checkInterval = setInterval(() => {
+          if (this.connectionStatus === 'connected' && this.room) {
+            clearInterval(checkInterval);
+            clearTimeout(timeout);
+            console.log('✅ Waited connection completed successfully');
+            resolve(this.room);
+          } else if (this.connectionStatus === 'error') {
+            clearInterval(checkInterval);
+            clearTimeout(timeout);
+            console.log('❌ Waited connection failed');
+            reject(new Error('Connection failed'));
+          }
+        }, 100); // Check every 100ms
+      });
     }
 
     try {
@@ -97,6 +124,8 @@ class GameClient {
 
                   // Join the recovered room
                   const options = token ? { token } : {};
+                  console.log('🔐 DEBUG Step 2.1: Joining recovered room with token:', token ? `YES (length: ${token.length})` : 'NO');
+                  console.log('🔐 DEBUG Step 2.1: Options being sent:', options);
                   this.room = await this.client.joinById(data.newRoomId, options);
 
                   // Save new reconnection token
@@ -118,6 +147,8 @@ class GameClient {
 
               // Try joining the original room - server will transfer session if user matches
               const options = token ? { token } : {};
+              console.log('🔐 DEBUG Step 2.1: Joining original room with token:', token ? `YES (length: ${token.length})` : 'NO');
+              console.log('🔐 DEBUG Step 2.1: Options being sent:', options);
               this.room = await this.client.joinById(oldRoomId, options);
 
               // Save new reconnection token
@@ -132,11 +163,14 @@ class GameClient {
               return this.room;
 
             } catch (mappingError) {
-              // All recovery methods failed
+              // All recovery methods failed - but DON'T clear session!
+              // The server might just be down temporarily. Keep the token so manual
+              // refresh can try again when server comes back up.
               console.error('❌ All reconnection methods failed:', mappingError);
-              this.clearStoredSession();
+              // DO NOT clear session here - let user manually refresh when server is back
+              // this.clearStoredSession(); // REMOVED - was clearing token too early
               this.setStatus('error');
-              throw new Error('Failed to reconnect - please start a new game');
+              throw new Error('Failed to reconnect - server may be down, will retry');
             }
           }
         } else {
@@ -185,6 +219,8 @@ class GameClient {
       this.room = null;
       this.setStatus('disconnected');
     }
+    // Clear stored token on intentional disconnect
+    this.lastToken = undefined;
   }
 
   // Attempt to reconnect with exponential backoff
@@ -210,7 +246,8 @@ class GameClient {
     setTimeout(async () => {
       try {
         console.log(`🔄 Attempting reconnection (attempt ${this.reconnectAttempts})...`);
-        await this.connect(undefined, true); // true = try to reconnect
+        // Use lastToken that was saved from initial connection
+        await this.connect(this.lastToken, true); // true = try to reconnect
         console.log('✅ Automatic reconnection successful!');
       } catch (error) {
         console.log('❌ Automatic reconnection failed:', error);

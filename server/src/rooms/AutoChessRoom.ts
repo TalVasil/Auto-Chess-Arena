@@ -12,6 +12,9 @@ export class AutoChessRoom extends Room<GameState> {
   private elapsedTime: number = 0; // Accumulator for timer countdown
   private timerPaused: boolean = false; // Debug flag to pause timer
   private reconnectionPromises: Map<string, Promise<Client>> = new Map(); // Track reconnection promises by userId
+  private recoverySessionMap = new Map<number, string>(); // userId → oldSessionId mapping for recovery
+  private isRecoveryMode = false; // Flag to indicate we're in server restart recovery
+  private savedMatchupsForRecovery: any[] = []; // Store original matchups during recovery
 
   onCreate(options: any) {
     console.log('AutoChessRoom created!', options);
@@ -28,13 +31,40 @@ export class AutoChessRoom extends Room<GameState> {
     if (options.recover && options.snapshotData) {
       console.log('🔄 RECOVERY MODE: Restoring game from snapshot...');
 
+      // Enable recovery mode
+      this.isRecoveryMode = true;
+
       // Initialize empty state first
       this.setState(new GameState());
 
-      // Restore state from snapshot
-      this.deserializeGameState(options.snapshotData);
+      // Parse snapshot data (handle both string and object formats)
+      const snapshotData = typeof options.snapshotData === 'string'
+        ? JSON.parse(options.snapshotData)
+        : options.snapshotData;
+
+      // Build recovery map: userId → oldSessionId
+      if (snapshotData.players && Array.isArray(snapshotData.players)) {
+        snapshotData.players.forEach((playerData: any) => {
+          if (playerData.userId && playerData.sessionId) {
+            this.recoverySessionMap.set(playerData.userId, playerData.sessionId);
+            console.log(`📋 Recovery map: userId ${playerData.userId} had session ${playerData.sessionId}`);
+          }
+        });
+      }
+
+      // DON'T clear matchups - keep them with old session IDs
+      // They'll be updated progressively as players rejoin
+      if (snapshotData.currentMatchups && snapshotData.currentMatchups.length > 0) {
+        console.log(`💾 Keeping ${snapshotData.currentMatchups.length} matchup(s) with old session IDs for immediate restoration`);
+        console.log(`   Matchups will be updated as players rejoin`);
+      }
+      // DO NOT clear snapshotData.currentMatchups!
+
+      // Restore state from snapshot (without session IDs in matchups)
+      this.deserializeGameState(snapshotData);
 
       console.log(`✅ Room recovered! Players: ${this.state.players.size}, Phase: ${this.state.phase}`);
+      console.log(`⏳ Waiting for ${this.recoverySessionMap.size} players to rejoin...`);
     } else {
       // Normal initialization - fresh game
       console.log('🆕 NEW GAME: Creating fresh game state...');
@@ -630,6 +660,14 @@ export class AutoChessRoom extends Room<GameState> {
   async onAuth(client: Client, options: any) {
     const token = options.token;
 
+    // DEBUG Step 2.2: Log what we received
+    console.log('🔐 DEBUG Step 2.2: onAuth called with options:', {
+      hasToken: !!token,
+      tokenLength: token?.length || 0,
+      optionsKeys: Object.keys(options || {}),
+      clientSessionId: client.sessionId
+    });
+
     // Require authentication - no guest access allowed
     if (!token) {
       console.error(`🚫 Player ${client.sessionId} attempted to join without authentication - REJECTED`);
@@ -672,6 +710,107 @@ export class AutoChessRoom extends Room<GameState> {
 
     // Check if this player already exists (reconnection)
     const existingPlayer = this.state.players.get(client.sessionId);
+
+    // RECOVERY MODE: Check if this userId is rejoining after server restart
+    if (this.isRecoveryMode && this.recoverySessionMap.has(auth.userId)) {
+      const oldSessionId = this.recoverySessionMap.get(auth.userId)!;
+      console.log(`🔄 RECOVERY: User ${auth.displayName} (ID: ${auth.userId}) rejoining after server restart`);
+      console.log(`   Old session: ${oldSessionId} → New session: ${client.sessionId}`);
+
+      // Find player by userId (not by sessionId, since sessionId changed)
+      let recoveredPlayer: any = null;
+      this.state.players.forEach((player, sessionId) => {
+        if (player.userId === auth.userId) {
+          recoveredPlayer = player;
+        }
+      });
+
+      if (recoveredPlayer) {
+        // Remove old player entry
+        this.state.players.forEach((player, sessionId) => {
+          if (player.userId === auth.userId) {
+            this.state.players.delete(sessionId);
+          }
+        });
+
+        // Update player's sessionId to new one
+        recoveredPlayer.id = client.sessionId;
+
+        // Re-add player with NEW sessionId
+        this.state.players.set(client.sessionId, recoveredPlayer);
+
+        // Update matchup references
+        this.updateMatchupSessionIds(oldSessionId, client.sessionId);
+
+        console.log(`✅ Restored player ${auth.displayName} with new session ${client.sessionId}`);
+        console.log(`   Preserved: HP=${recoveredPlayer.hp}, Gold=${recoveredPlayer.gold}, XP=${recoveredPlayer.xp}, Bench=${recoveredPlayer.bench.length}, Board=${recoveredPlayer.board.length}`);
+
+        // Send matchups if in combat
+        if (this.state.phase === 'COMBAT' && this.state.currentMatchups.length > 0) {
+          const matchups = this.state.currentMatchups.map((m) => ({
+            player1Id: m.player1Id,
+            player1Name: m.player1Name,
+            player2Id: m.player2Id,
+            player2Name: m.player2Name,
+          }));
+
+          client.send('combat_matchups', {
+            roundNumber: this.state.roundNumber,
+            matchups: matchups,
+          });
+
+          console.log('   📤 Sent combat matchups to recovered player');
+        }
+
+        // Remove from recovery map
+        this.recoverySessionMap.delete(auth.userId);
+
+        // If all players have rejoined, exit recovery mode and restore matchups
+        if (this.recoverySessionMap.size === 0) {
+          this.isRecoveryMode = false;
+          console.log('✅ All players have rejoined after server restart, exiting recovery mode');
+
+          // Restore matchups with updated session IDs
+          if (this.savedMatchupsForRecovery.length > 0) {
+            console.log(`🔄 Restoring ${this.savedMatchupsForRecovery.length} matchup(s) with new session IDs...`);
+
+            this.savedMatchupsForRecovery.forEach((savedMatchup: any) => {
+              // Find new session IDs by matching usernames
+              const player1 = Array.from(this.state.players.values()).find(p => p.username === savedMatchup.player1Name);
+              const player2 = Array.from(this.state.players.values()).find(p => p.username === savedMatchup.player2Name);
+
+              if (player1 && player2) {
+                const matchup = new Matchup();
+                matchup.player1Id = player1.id;
+                matchup.player1Name = player1.username;
+                matchup.player2Id = player2.id;
+                matchup.player2Name = player2.username;
+
+                this.state.currentMatchups.push(matchup);
+                console.log(`   ✅ Restored matchup: ${player1.username} (${player1.id}) vs ${player2.username} (${player2.id})`);
+              }
+            });
+
+            // Broadcast matchups to all clients
+            const matchups = this.state.currentMatchups.map((m) => ({
+              player1Id: m.player1Id,
+              player1Name: m.player1Name,
+              player2Id: m.player2Id,
+              player2Name: m.player2Name,
+            }));
+
+            this.broadcast('combat_matchups', {
+              matchups: matchups,
+              roundNumber: this.state.roundNumber,
+            });
+
+            console.log(`   📤 Broadcasted restored matchups to all ${this.clients.length} clients`);
+          }
+        }
+
+        return;
+      }
+    }
 
     if (existingPlayer) {
       // RECONNECTION - player already exists in game
@@ -854,6 +993,45 @@ export class AutoChessRoom extends Room<GameState> {
     await gameStateSnapshotService.finalizeSession(this.roomId);
   }
 
+  /**
+   * Update all matchup references from old sessionId to new sessionId
+   * Used during recovery when players rejoin with new sessions
+   */
+  private updateMatchupSessionIds(oldSessionId: string, newSessionId: string): void {
+    let updated = 0;
+
+    this.state.currentMatchups.forEach((matchup) => {
+      if (matchup.player1Id === oldSessionId) {
+        matchup.player1Id = newSessionId;
+        updated++;
+        console.log(`   Updated matchup player1Id: ${oldSessionId} → ${newSessionId}`);
+      }
+
+      if (matchup.player2Id === oldSessionId) {
+        matchup.player2Id = newSessionId;
+        updated++;
+        console.log(`   Updated matchup player2Id: ${oldSessionId} → ${newSessionId}`);
+      }
+    });
+
+    if (updated > 0) {
+      // Broadcast updated matchups to all clients
+      const matchups = this.state.currentMatchups.map((m) => ({
+        player1Id: m.player1Id,
+        player1Name: this.state.players.get(m.player1Id)?.username || 'Unknown',
+        player2Id: m.player2Id,
+        player2Name: this.state.players.get(m.player2Id)?.username || 'Unknown',
+      }));
+
+      this.broadcast('combat_matchups', {
+        matchups: matchups,
+        roundNumber: this.state.roundNumber,
+      });
+
+      console.log(`   📤 Broadcasted updated matchups to all clients`);
+    }
+  }
+
   // Helper method for handling reconnection with proper async/await pattern
   private async handleReconnection(client: Client, player: Player, playerName: string) {
     try {
@@ -869,6 +1047,23 @@ export class AutoChessRoom extends Room<GameState> {
       // Client reconnected successfully
       console.log(`✅ ${playerName} successfully reconnected`);
       this.reconnectionPromises.delete(String(player.userId));
+
+      // Send combat matchups if in COMBAT phase
+      if (this.state.phase === 'COMBAT' && this.state.currentMatchups.length > 0) {
+        const matchups = this.state.currentMatchups.map((m) => ({
+          player1Id: m.player1Id,
+          player1Name: m.player1Name,
+          player2Id: m.player2Id,
+          player2Name: m.player2Name,
+        }));
+
+        client.send('combat_matchups', {
+          roundNumber: this.state.roundNumber,
+          matchups: matchups,
+        });
+
+        console.log(`   📤 Sent combat matchups to reconnected player ${playerName}`);
+      }
 
     } catch (error) {
       // Reconnection window expired or failed - remove player from game

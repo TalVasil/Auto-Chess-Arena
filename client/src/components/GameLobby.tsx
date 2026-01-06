@@ -66,14 +66,26 @@ export function GameLobby() {
             >
               Auto Chess Arena - Lobby
             </Heading>
-            <Button
-              variant="ghost"
-              color="red.400"
-              _hover={{ bg: 'rgba(255, 0, 0, 0.1)', color: 'red.300' }}
-              onClick={logout}
-            >
-              Logout
-            </Button>
+            <HStack spacing={2}>
+              <Button
+                variant="ghost"
+                color="yellow.400"
+                _hover={{ bg: 'rgba(255, 255, 0, 0.1)', color: 'yellow.300' }}
+                onClick={() => {
+                  gameClient.send('cancel_game');
+                }}
+              >
+                🏠 Cancel Game
+              </Button>
+              <Button
+                variant="ghost"
+                color="red.400"
+                _hover={{ bg: 'rgba(255, 0, 0, 0.1)', color: 'red.300' }}
+                onClick={logout}
+              >
+                🚪 Logout
+              </Button>
+            </HStack>
           </HStack>
 
           {displayName && (

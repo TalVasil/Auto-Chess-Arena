@@ -34,6 +34,8 @@ export function GamePlay() {
   const myPlayer = players.find((p) => p.id === mySessionId);
 
   // Get opponent player info
+  // Note: Even if opponent is disconnected, their data should remain in players array
+  // because server keeps disconnected players for 30min reconnection window
   const opponentPlayer = players.find((p) => p.id === myOpponentId);
 
   // Debug logging for opponent data
@@ -45,9 +47,11 @@ export function GamePlay() {
     opponentPlayer: opponentPlayer ? {
       id: opponentPlayer.id,
       username: opponentPlayer.username,
-      boardSize: opponentPlayer.board?.length
+      boardSize: opponentPlayer.board?.length,
+      isEliminated: opponentPlayer.isEliminated
     } : null,
-    totalPlayers: players.length
+    totalPlayers: players.length,
+    allPlayerIds: players.map(p => p.id)
   });
 
   // Merge my board (right side) with opponent's board (left side) for combat display
@@ -476,7 +480,18 @@ export function GamePlay() {
           <Box textAlign="center" mb={2}>
             <Text fontSize="lg" fontWeight="bold" color="red.400">
               ⚔️ Fighting: {myOpponentName}
+              {opponentPlayer && !opponentPlayer.isEliminated && (
+                <Text as="span" fontSize="sm" color="gray.400" ml={2}>
+                  (Active)
+                </Text>
+              )}
             </Text>
+            {/* Show warning if opponent data is missing (shouldn't happen) */}
+            {!opponentPlayer && (
+              <Text fontSize="sm" color="yellow.400" mt={1}>
+                ⚠️ Opponent disconnected - arena may not be visible
+              </Text>
+            )}
           </Box>
         )}
 
