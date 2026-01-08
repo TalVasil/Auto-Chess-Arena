@@ -95,42 +95,32 @@ Implement automatic combat where characters attack each other during COMBAT phas
 
 ---
 
-### Step 5: Basic Attack Logic (Turn-Based)
+### Step 5: Basic Attack Logic (Turn-Based) ✅
 **Goal**: Characters attack each other automatically
 
+**Implemented in baby steps:**
+- 5.1 ✅ Distance calculation (Manhattan distance)
+- 5.2 ✅ First character finds nearest enemy
+- 5.3a ✅ Calculate damage for first character
+- 5.3b ✅ Apply damage to HP for first character
+- 5.4 ✅ ALL characters find targets (with sticky targeting)
+- 5.5 ✅ ALL characters attack and deal damage
+
 **Server Changes**:
-- Replace mock HP decrease with actual attack loop:
-  ```typescript
-  // Get all alive characters from both boards
-  const team1 = player1.board.filter(pos => pos?.character && pos.character.currentHP > 0);
-  const team2 = player2.board.filter(pos => pos?.character && pos.character.currentHP > 0);
-
-  // Attack loop (every 1 second)
-  const attackInterval = setInterval(() => {
-    // Each character attacks nearest enemy
-    team1.forEach(attacker => {
-      const target = team2[0]; // Simple: target first enemy
-      if (target) {
-        const damage = Math.max(1, attacker.character.attack - target.character.defense);
-        target.character.currentHP -= damage;
-
-        this.broadcast('character_attack', {
-          attackerId: attacker.character.id,
-          targetId: target.character.id,
-          damage: damage
-        });
-      }
-    });
-
-    // Remove dead characters
-    // Check if combat is over
-  }, 1000);
-  ```
+- ✅ Implemented Manhattan distance calculation: `Math.abs(row1 - row2) + Math.abs(col1 - col2)`
+- ✅ Sticky targeting system: Characters lock onto a target until it dies (prevents chaotic switching)
+- ✅ Attack loop runs every 2 seconds
+- ✅ Both teams attack simultaneously
+- ✅ Damage calculation: `Math.max(1, attacker.attack - target.defense)`
+- ✅ Clone and reassign Character to trigger Colyseus sync
+- ✅ Attack logs show: attacker → target : (distance) dealt X dmg (HP: old → new)
 
 **Client Changes**:
-- Listen to `character_attack` events for visual feedback (optional)
+- None needed - HP bars auto-update via Colyseus sync
 
-**Test**: Combat phase starts → characters automatically attack → HP decreases
+**Test**: ✅ WORKING - All characters attack nearest enemies with sticky targeting, HP decreases correctly
+
+**Known Issue**: Dead characters (HP = 0) are still being targeted. Need to filter them out in next step.
 
 ---
 

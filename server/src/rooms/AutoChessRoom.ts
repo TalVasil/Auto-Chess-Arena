@@ -16,6 +16,7 @@ export class AutoChessRoom extends Room<GameState> {
   private isRecoveryMode = false; // Flag to indicate we're in server restart recovery
   private savedMatchupsForRecovery: any[] = []; // Store original matchups during recovery
   private mockCombatInterval: NodeJS.Timeout | null = null; // Store interval to clear it later
+  private targetLocks: Map<string, string> = new Map(); // Track which character is targeting which (attackerPos → targetPos)
 
   onCreate(options: any) {
     console.log('AutoChessRoom created!', options);
@@ -140,6 +141,61 @@ export class AutoChessRoom extends Room<GameState> {
     this.onMessage('move_character', (client, message) => {
       console.log('Player wants to move character:', message);
       // TODO: Implement move character logic
+    });
+
+    // Buy XP handler: costs 4 gold, gives 4 XP
+    this.onMessage('buy_xp', (client) => {
+      const player = this.state.players.get(client.sessionId);
+
+      if (!player) {
+        console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      const XP_COST = 4;
+      const XP_GAIN = 4;
+
+      // Check if player has enough gold
+      if (player.gold < XP_COST) {
+        console.log(`⚠️ Player ${player.username} cannot afford XP (has ${player.gold} gold, needs ${XP_COST})`);
+        return;
+      }
+
+      // Deduct gold and add XP
+      player.gold -= XP_COST;
+      player.xp += XP_GAIN;
+
+      console.log(`💎 Player ${player.username} bought ${XP_GAIN} XP for ${XP_COST} gold (XP: ${player.xp}, Gold: ${player.gold})`);
+
+      // Check for level up
+      this.checkAndHandleLevelUp(player);
+    });
+
+    // Reroll shop handler: costs 2 gold, regenerates shop
+    this.onMessage('reroll_shop', (client) => {
+      const player = this.state.players.get(client.sessionId);
+
+      if (!player) {
+        console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      const REROLL_COST = 2;
+
+      // Check if player has enough gold
+      if (player.gold < REROLL_COST) {
+        console.log(`⚠️ Player ${player.username} cannot afford reroll (has ${player.gold} gold, needs ${REROLL_COST})`);
+        return;
+      }
+
+      // Deduct gold
+      player.gold -= REROLL_COST;
+
+      // Regenerate shop
+      const characterIds = characterService.getAllCharacterIds();
+      this.state.generateShopForPlayer(client.sessionId, characterIds);
+
+      console.log(`🔄 Player ${player.username} rerolled shop for ${REROLL_COST} gold (Gold: ${player.gold})`);
     });
 
     this.onMessage('ready', (client) => {
@@ -1303,25 +1359,18 @@ export class AutoChessRoom extends Room<GameState> {
 
       // Note: Phase change will be automatically synced via Colyseus onStateChange
 
-      // Helper function: Calculate distance between two positions (Step 5.1)
+      // Helper function: Calculate distance between two positions (Manhattan distance)
       const getDistance = (pos1: {row: number, col: number}, pos2: {row: number, col: number}): number => {
-        const rowDiff = Math.abs(pos1.row - pos2.row);
-        const colDiff = Math.abs(pos1.col - pos2.col);
-        return Math.sqrt(rowDiff * rowDiff + colDiff * colDiff);
+        return Math.abs(pos1.row - pos2.row) + Math.abs(pos1.col - pos2.col);
       };
 
       // TODO: Simulate combat
       // TEMPORARY MOCK: Test targeting system
       console.log('⚔️ COMBAT: Starting attack interval');
       this.mockCombatInterval = setInterval(() => {
-        console.log('⚔️ COMBAT: Tick');
-
         // Get matchups for this combat
         const matchups = this.state.currentMatchups;
-        if (matchups.length === 0) {
-          console.log('⚠️ No matchups found');
-          return;
-        }
+        if (matchups.length === 0) return;
 
         // Process each matchup
         matchups.forEach((matchup) => {
@@ -1329,8 +1378,6 @@ export class AutoChessRoom extends Room<GameState> {
           const player2 = this.state.players.get(matchup.player2Id);
 
           if (!player1 || !player2) return;
-
-          console.log(`\n⚔️ Matchup: ${player1.username} vs ${player2.username}`);
 
           // Get alive characters from both teams
           const team1Chars: Array<{pos: any, boardPos: {row: number, col: number}}> = [];
@@ -1348,45 +1395,139 @@ export class AutoChessRoom extends Room<GameState> {
             }
           });
 
-          console.log(`  Team 1 (${player1.username}): ${team1Chars.length} alive`);
-          console.log(`  Team 2 (${player2.username}): ${team2Chars.length} alive`);
-
-          // STEP 5.2: Test targeting for FIRST character only
+          // STEP 5.5: ALL characters attack their nearest target
           if (team1Chars.length > 0 && team2Chars.length > 0) {
-            const attacker = team1Chars[0];
-            const attackerChar = attacker.pos.character;
+            // Team 1 attacks Team 2
+            team1Chars.forEach((attacker) => {
+              const attackerChar = attacker.pos.character;
+              const attackerKey = `${attacker.boardPos.row},${attacker.boardPos.col}`;
 
-            console.log(`\n🎯 Testing targeting for: ${attackerChar.name} at (${attacker.boardPos.row}, ${attacker.boardPos.col})`);
+              // Check if this character already has a locked target
+              let nearestEnemy = null;
+              let minDistance = Infinity;
+              const enemiesAtMinDistance: any[] = [];
 
-            // Find nearest enemy
-            let nearestEnemy = null;
-            let minDistance = Infinity;
-            const enemiesAtMinDistance: any[] = [];
+              const lockedTargetKey = this.targetLocks.get(attackerKey);
+              if (lockedTargetKey) {
+                // Try to find the locked target (if still alive)
+                const lockedTarget = team2Chars.find(enemy =>
+                  `${enemy.boardPos.row},${enemy.boardPos.col}` === lockedTargetKey
+                );
+                if (lockedTarget) {
+                  nearestEnemy = lockedTarget;
+                  minDistance = getDistance(attacker.boardPos, lockedTarget.boardPos);
+                } else {
+                  // Locked target died, clear the lock
+                  this.targetLocks.delete(attackerKey);
+                }
+              }
 
-            team2Chars.forEach((enemy) => {
-              const distance = getDistance(attacker.boardPos, enemy.boardPos);
-              console.log(`  → Distance to ${enemy.pos.character.name} at (${enemy.boardPos.row}, ${enemy.boardPos.col}): ${distance.toFixed(2)}`);
+              // If no locked target, find nearest enemy
+              if (!nearestEnemy) {
+                team2Chars.forEach((enemy) => {
+                  const distance = getDistance(attacker.boardPos, enemy.boardPos);
+                  if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestEnemy = enemy;
+                    enemiesAtMinDistance.length = 0;
+                    enemiesAtMinDistance.push(enemy);
+                  } else if (distance === minDistance) {
+                    enemiesAtMinDistance.push(enemy);
+                  }
+                });
 
-              if (distance < minDistance) {
-                minDistance = distance;
-                nearestEnemy = enemy;
-                enemiesAtMinDistance.length = 0; // Clear array
-                enemiesAtMinDistance.push(enemy);
-              } else if (distance === minDistance) {
-                enemiesAtMinDistance.push(enemy);
+                if (enemiesAtMinDistance.length > 1) {
+                  nearestEnemy = enemiesAtMinDistance[Math.floor(Math.random() * enemiesAtMinDistance.length)];
+                }
+
+                // Lock onto this target
+                if (nearestEnemy) {
+                  const targetKey = `${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}`;
+                  this.targetLocks.set(attackerKey, targetKey);
+                }
+              }
+
+              if (nearestEnemy) {
+                // Calculate damage and apply HP decrease
+                const targetChar = nearestEnemy.pos.character;
+                const damage = Math.max(1, attackerChar.attack - targetChar.defense);
+                const oldHP = targetChar.currentHP;
+
+                // Clone and update HP (Colyseus sync requirement)
+                const updatedTarget = new Character();
+                Object.assign(updatedTarget, targetChar);
+                updatedTarget.currentHP = Math.max(0, targetChar.currentHP - damage);
+                nearestEnemy.pos.character = updatedTarget;
+
+                console.log(`⚔️ ${attackerChar.name} [${attacker.boardPos.row},${attacker.boardPos.col}] → ${updatedTarget.name} [${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}] : (${minDistance}) dealt ${damage} dmg (HP: ${oldHP} → ${updatedTarget.currentHP})`);
               }
             });
 
-            // Random selection if multiple enemies at same distance
-            if (enemiesAtMinDistance.length > 1) {
-              const randomIndex = Math.floor(Math.random() * enemiesAtMinDistance.length);
-              nearestEnemy = enemiesAtMinDistance[randomIndex];
-              console.log(`  🎲 Multiple targets at distance ${minDistance.toFixed(2)}, randomly picked ${nearestEnemy.pos.character.name}`);
-            }
+            // Team 2 attacks Team 1
+            team2Chars.forEach((attacker) => {
+              const attackerChar = attacker.pos.character;
+              const attackerKey = `${attacker.boardPos.row},${attacker.boardPos.col}`;
 
-            if (nearestEnemy) {
-              console.log(`  ✅ ${attackerChar.name} targeting ${nearestEnemy.pos.character.name} at distance ${minDistance.toFixed(2)}`);
-            }
+              // Check if this character already has a locked target
+              let nearestEnemy = null;
+              let minDistance = Infinity;
+              const enemiesAtMinDistance: any[] = [];
+
+              const lockedTargetKey = this.targetLocks.get(attackerKey);
+              if (lockedTargetKey) {
+                // Try to find the locked target (if still alive)
+                const lockedTarget = team1Chars.find(enemy =>
+                  `${enemy.boardPos.row},${enemy.boardPos.col}` === lockedTargetKey
+                );
+                if (lockedTarget) {
+                  nearestEnemy = lockedTarget;
+                  minDistance = getDistance(attacker.boardPos, lockedTarget.boardPos);
+                } else {
+                  // Locked target died, clear the lock
+                  this.targetLocks.delete(attackerKey);
+                }
+              }
+
+              // If no locked target, find nearest enemy
+              if (!nearestEnemy) {
+                team1Chars.forEach((enemy) => {
+                  const distance = getDistance(attacker.boardPos, enemy.boardPos);
+                  if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestEnemy = enemy;
+                    enemiesAtMinDistance.length = 0;
+                    enemiesAtMinDistance.push(enemy);
+                  } else if (distance === minDistance) {
+                    enemiesAtMinDistance.push(enemy);
+                  }
+                });
+
+                if (enemiesAtMinDistance.length > 1) {
+                  nearestEnemy = enemiesAtMinDistance[Math.floor(Math.random() * enemiesAtMinDistance.length)];
+                }
+
+                // Lock onto this target
+                if (nearestEnemy) {
+                  const targetKey = `${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}`;
+                  this.targetLocks.set(attackerKey, targetKey);
+                }
+              }
+
+              if (nearestEnemy) {
+                // Calculate damage and apply HP decrease
+                const targetChar = nearestEnemy.pos.character;
+                const damage = Math.max(1, attackerChar.attack - targetChar.defense);
+                const oldHP = targetChar.currentHP;
+
+                // Clone and update HP (Colyseus sync requirement)
+                const updatedTarget = new Character();
+                Object.assign(updatedTarget, targetChar);
+                updatedTarget.currentHP = Math.max(0, targetChar.currentHP - damage);
+                nearestEnemy.pos.character = updatedTarget;
+
+                console.log(`⚔️ ${attackerChar.name} [${attacker.boardPos.row},${attacker.boardPos.col}] → ${updatedTarget.name} [${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}] : (${minDistance}) dealt ${damage} dmg (HP: ${oldHP} → ${updatedTarget.currentHP})`);
+              }
+            });
           }
         });
       }, 2000);
@@ -1399,6 +1540,9 @@ export class AutoChessRoom extends Room<GameState> {
         this.mockCombatInterval = null;
         console.log('🛑 MOCK COMBAT: Interval cleared');
       }
+
+      // Clear target locks for next round
+      this.targetLocks.clear();
 
       // Reset all characters to full HP (they're still on board, just at 0 HP)
       this.state.players.forEach((player) => {
