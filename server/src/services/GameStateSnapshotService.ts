@@ -125,6 +125,7 @@ class GameStateSnapshotService {
       attack: char.attack,
       defense: char.defense,
       hp: char.hp,
+      currentHP: char.currentHP, // Save current HP for combat state
       speed: char.speed,
       stars: char.stars,
     };

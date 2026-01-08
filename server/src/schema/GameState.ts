@@ -21,6 +21,7 @@ export class Character extends Schema {
   @type('number') attack: number = 0;
   @type('number') defense: number = 0;
   @type('number') hp: number = 0;
+  @type('number') currentHP: number = 0; // Current HP in combat (syncs to client)
   @type('number') speed: number = 100; // Attack frequency (higher = faster)
   @type('number') stars: number = 1; // Upgrade level (1-3 stars)
 }
@@ -133,16 +134,18 @@ export class GameState extends Schema {
     // Clear previous matchups
     this.currentMatchups.clear();
 
-    // Get all alive player IDs
+    // Get all alive player IDs and their names
     const alivePlayerIds: string[] = [];
+    const playerNames = new Map<string, string>();
     this.players.forEach((player, sessionId) => {
       if (!player.isEliminated) {
         alivePlayerIds.push(sessionId);
+        playerNames.set(sessionId, player.username);
       }
     });
 
     // Generate matchups using CombatService
-    const matchupPairs = combatService.createMatchups(alivePlayerIds, roundNumber);
+    const matchupPairs = combatService.createMatchups(alivePlayerIds, roundNumber, playerNames);
 
     // Convert to Matchup schema objects with player names
     for (const pair of matchupPairs) {

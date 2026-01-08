@@ -55,7 +55,7 @@ export class CombatService {
    * - Random selection from available pool
    * - Handle odd number of players (one gets bye)
    */
-  createMatchups(playerIds: string[], roundNumber: number): CombatMatchup[] {
+  createMatchups(playerIds: string[], roundNumber: number, playerNames?: Map<string, string>): CombatMatchup[] {
     const matchups: CombatMatchup[] = [];
     const availablePlayers = [...playerIds];
 
@@ -81,7 +81,9 @@ export class CombatService {
         this.updatePlayerHistory(player1Id, player2Id, playerIds.length);
         this.updatePlayerHistory(player2Id, player1Id, playerIds.length);
 
-        console.log(`🤝 Matchup: ${player1Id} vs ${player2Id}`);
+        const player1Name = playerNames?.get(player1Id) || player1Id;
+        const player2Name = playerNames?.get(player2Id) || player2Id;
+        console.log(`🤝 Matchup: ${player1Name} vs ${player2Name}`);
       } else {
         // No valid opponent found, try to pair with anyone (fallback)
         if (availablePlayers.length > 0) {
@@ -91,10 +93,13 @@ export class CombatService {
           this.updatePlayerHistory(player1Id, player2Id, playerIds.length);
           this.updatePlayerHistory(player2Id, player1Id, playerIds.length);
 
-          console.log(`🤝 Matchup (fallback): ${player1Id} vs ${player2Id}`);
+          const player1Name = playerNames?.get(player1Id) || player1Id;
+          const player2Name = playerNames?.get(player2Id) || player2Id;
+          console.log(`🤝 Matchup (fallback): ${player1Name} vs ${player2Name}`);
         } else {
           // Odd player, gets bye round
-          console.log(`🛡️ Player ${player1Id} gets a BYE round (no combat)`);
+          const player1Name = playerNames?.get(player1Id) || player1Id;
+          console.log(`🛡️ Player ${player1Name} gets a BYE round (no combat)`);
           availablePlayers.push(player1Id); // Put back for bye handling
           break;
         }
@@ -104,7 +109,8 @@ export class CombatService {
     // Handle remaining player (bye round)
     if (availablePlayers.length === 1) {
       const byePlayer = availablePlayers[0];
-      console.log(`🛡️ Player ${byePlayer} gets a BYE round`);
+      const byePlayerName = playerNames?.get(byePlayer) || byePlayer;
+      console.log(`🛡️ Player ${byePlayerName} gets a BYE round`);
 
       // Clear their history so they can fight anyone next round
       this.resetPlayerHistory(byePlayer);

@@ -15,6 +15,7 @@ export class AutoChessRoom extends Room<GameState> {
   private recoverySessionMap = new Map<number, string>(); // userId → oldSessionId mapping for recovery
   private isRecoveryMode = false; // Flag to indicate we're in server restart recovery
   private savedMatchupsForRecovery: any[] = []; // Store original matchups during recovery
+  private mockCombatInterval: NodeJS.Timeout | null = null; // Store interval to clear it later
 
   onCreate(options: any) {
     console.log('AutoChessRoom created!', options);
@@ -127,6 +128,7 @@ export class AutoChessRoom extends Room<GameState> {
       character.attack = characterData.attack;
       character.defense = characterData.defense;
       character.hp = characterData.hp;
+      character.currentHP = characterData.hp; // Initialize current HP
       character.stars = 1;
 
       // Add to player's bench
@@ -308,6 +310,10 @@ export class AutoChessRoom extends Room<GameState> {
       boardPos.row = row;
       boardPos.col = col;
       boardPos.character = character;
+
+      // Initialize currentHP to max HP
+      character.currentHP = character.hp;
+
       player.board.push(boardPos);
 
       // Remove from bench
@@ -592,6 +598,7 @@ export class AutoChessRoom extends Room<GameState> {
               character.attack = charData.attack;
               character.defense = charData.defense;
               character.hp = charData.hp;
+              character.currentHP = charData.currentHP ?? charData.hp; // Restore currentHP or use max HP
               character.speed = charData.speed;
               character.stars = charData.stars;
               player.bench.push(character);
@@ -622,6 +629,7 @@ export class AutoChessRoom extends Room<GameState> {
                 character.attack = posData.character.attack;
                 character.defense = posData.character.defense;
                 character.hp = posData.character.hp;
+                character.currentHP = posData.character.currentHP ?? posData.character.hp; // Restore currentHP or use max HP
                 character.speed = posData.character.speed;
                 character.stars = posData.character.stars;
                 position.character = character;
@@ -986,6 +994,13 @@ export class AutoChessRoom extends Room<GameState> {
   async onDispose() {
     console.log('Room disposed!');
 
+    // Clear mock combat interval if running
+    if (this.mockCombatInterval) {
+      clearInterval(this.mockCombatInterval);
+      this.mockCombatInterval = null;
+      console.log('🛑 MOCK COMBAT: Interval cleared on dispose');
+    }
+
     // Stop periodic snapshots
     gameStateSnapshotService.stopSnapshots(this.roomId);
 
@@ -1288,9 +1303,117 @@ export class AutoChessRoom extends Room<GameState> {
 
       // Note: Phase change will be automatically synced via Colyseus onStateChange
 
+      // Helper function: Calculate distance between two positions (Step 5.1)
+      const getDistance = (pos1: {row: number, col: number}, pos2: {row: number, col: number}): number => {
+        const rowDiff = Math.abs(pos1.row - pos2.row);
+        const colDiff = Math.abs(pos1.col - pos2.col);
+        return Math.sqrt(rowDiff * rowDiff + colDiff * colDiff);
+      };
+
       // TODO: Simulate combat
+      // TEMPORARY MOCK: Test targeting system
+      console.log('⚔️ COMBAT: Starting attack interval');
+      this.mockCombatInterval = setInterval(() => {
+        console.log('⚔️ COMBAT: Tick');
+
+        // Get matchups for this combat
+        const matchups = this.state.currentMatchups;
+        if (matchups.length === 0) {
+          console.log('⚠️ No matchups found');
+          return;
+        }
+
+        // Process each matchup
+        matchups.forEach((matchup) => {
+          const player1 = this.state.players.get(matchup.player1Id);
+          const player2 = this.state.players.get(matchup.player2Id);
+
+          if (!player1 || !player2) return;
+
+          console.log(`\n⚔️ Matchup: ${player1.username} vs ${player2.username}`);
+
+          // Get alive characters from both teams
+          const team1Chars: Array<{pos: any, boardPos: {row: number, col: number}}> = [];
+          const team2Chars: Array<{pos: any, boardPos: {row: number, col: number}}> = [];
+
+          player1.board.forEach((pos) => {
+            if (pos?.character && pos.character.currentHP > 0) {
+              team1Chars.push({pos, boardPos: {row: pos.row, col: pos.col}});
+            }
+          });
+
+          player2.board.forEach((pos) => {
+            if (pos?.character && pos.character.currentHP > 0) {
+              team2Chars.push({pos, boardPos: {row: pos.row, col: pos.col}});
+            }
+          });
+
+          console.log(`  Team 1 (${player1.username}): ${team1Chars.length} alive`);
+          console.log(`  Team 2 (${player2.username}): ${team2Chars.length} alive`);
+
+          // STEP 5.2: Test targeting for FIRST character only
+          if (team1Chars.length > 0 && team2Chars.length > 0) {
+            const attacker = team1Chars[0];
+            const attackerChar = attacker.pos.character;
+
+            console.log(`\n🎯 Testing targeting for: ${attackerChar.name} at (${attacker.boardPos.row}, ${attacker.boardPos.col})`);
+
+            // Find nearest enemy
+            let nearestEnemy = null;
+            let minDistance = Infinity;
+            const enemiesAtMinDistance: any[] = [];
+
+            team2Chars.forEach((enemy) => {
+              const distance = getDistance(attacker.boardPos, enemy.boardPos);
+              console.log(`  → Distance to ${enemy.pos.character.name} at (${enemy.boardPos.row}, ${enemy.boardPos.col}): ${distance.toFixed(2)}`);
+
+              if (distance < minDistance) {
+                minDistance = distance;
+                nearestEnemy = enemy;
+                enemiesAtMinDistance.length = 0; // Clear array
+                enemiesAtMinDistance.push(enemy);
+              } else if (distance === minDistance) {
+                enemiesAtMinDistance.push(enemy);
+              }
+            });
+
+            // Random selection if multiple enemies at same distance
+            if (enemiesAtMinDistance.length > 1) {
+              const randomIndex = Math.floor(Math.random() * enemiesAtMinDistance.length);
+              nearestEnemy = enemiesAtMinDistance[randomIndex];
+              console.log(`  🎲 Multiple targets at distance ${minDistance.toFixed(2)}, randomly picked ${nearestEnemy.pos.character.name}`);
+            }
+
+            if (nearestEnemy) {
+              console.log(`  ✅ ${attackerChar.name} targeting ${nearestEnemy.pos.character.name} at distance ${minDistance.toFixed(2)}`);
+            }
+          }
+        });
+      }, 2000);
     } else if (this.state.phase === 'COMBAT') {
       // Transition from COMBAT back to PREPARATION
+
+      // Clear mock combat interval
+      if (this.mockCombatInterval) {
+        clearInterval(this.mockCombatInterval);
+        this.mockCombatInterval = null;
+        console.log('🛑 MOCK COMBAT: Interval cleared');
+      }
+
+      // Reset all characters to full HP (they're still on board, just at 0 HP)
+      this.state.players.forEach((player) => {
+        player.board.forEach((pos) => {
+          if (pos?.character) {
+            // Clone and reset HP
+            const restoredChar = new Character();
+            Object.assign(restoredChar, pos.character);
+            restoredChar.currentHP = restoredChar.hp; // Reset to max HP
+            pos.character = restoredChar;
+            console.log(`♻️ Restored ${restoredChar.name} to full HP (${restoredChar.hp})`);
+          }
+        });
+      });
+
       this.state.roundNumber++;
       this.state.phase = 'PREPARATION';
       this.state.timer = 30;

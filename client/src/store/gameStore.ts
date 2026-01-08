@@ -14,6 +14,7 @@ export interface Character {
   attack: number;
   defense: number;
   hp: number;
+  currentHP: number; // Current HP during combat
   stars: number;
 }
 
@@ -379,6 +380,7 @@ export const useGameStore = create<GameStoreState>()(
               attack: char.attack,
               defense: char.defense,
               hp: char.hp,
+              currentHP: char.currentHP || char.hp, // Current HP or default to max HP
               stars: char.stars,
             });
           });
@@ -402,6 +404,7 @@ export const useGameStore = create<GameStoreState>()(
                 attack: pos.character.attack,
                 defense: pos.character.defense,
                 hp: pos.character.hp,
+                currentHP: pos.character.currentHP ?? pos.character.hp, // Current HP or default to max HP
                 stars: pos.character.stars,
               } : undefined,
             });
