@@ -406,6 +406,8 @@ export const useGameStore = create<GameStoreState>()(
                 hp: pos.character.hp,
                 currentHP: pos.character.currentHP ?? pos.character.hp, // Current HP or default to max HP
                 stars: pos.character.stars,
+                targetRow: pos.character.targetRow ?? -1, // Target position row
+                targetCol: pos.character.targetCol ?? -1, // Target position col
               } : undefined,
             });
           });

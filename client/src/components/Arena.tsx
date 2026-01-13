@@ -1,3 +1,4 @@
+import React from 'react';
 import './Arena.css';
 
 // Helper function to trigger attack animation (for testing)
@@ -23,6 +24,8 @@ interface BoardPosition {
     currentHP?: number; // Current HP (will use hp if not set)
     attack?: number;    // Attack stat
     defense?: number;   // Defense stat
+    targetRow?: number; // Target position row (-1 = no target)
+    targetCol?: number; // Target position col (-1 = no target)
   };
 }
 
@@ -35,6 +38,20 @@ interface ArenaProps {
 export function Arena({ boardPositions, selectedArenaPos, onCellClick }: ArenaProps) {
   const COLUMNS = 9;
   const ROWS = 8;
+
+  // Grid layout constants (must match Arena.css)
+  const CELL_WIDTH = 65;
+  const CELL_HEIGHT = 60;
+  const GAP = 2;
+  const PADDING = 6;
+
+  // Helper function to calculate center position of a cell
+  const getCellCenterPosition = (row: number, col: number) => {
+    // Position = padding + (cell size + gap) * index + cell size / 2
+    const x = PADDING + (CELL_WIDTH + GAP) * col + CELL_WIDTH / 2;
+    const y = PADDING + (CELL_HEIGHT + GAP) * row + CELL_HEIGHT / 2;
+    return { x, y };
+  };
 
   // Helper function to get HP bar color based on percentage
   const getHPColor = (hpPercent: number): string => {
@@ -135,9 +152,98 @@ export function Arena({ boardPositions, selectedArenaPos, onCellClick }: ArenaPr
   };
 
   return (
-    <div className="arena-container">
+    <div className="arena-container" style={{ position: 'relative' }}>
       <div className="arena-grid">
         {renderGrid()}
+      </div>
+
+      {/* Attack particles overlay */}
+      <div
+        className="attack-particles-overlay"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+          zIndex: 1,
+        }}
+      >
+        {/* CSS for flowing particles */}
+        <style>
+          {`
+            @keyframes flow-particle {
+              0% {
+                transform: translate(0, 0);
+                opacity: 0;
+              }
+              10% {
+                opacity: 1;
+              }
+              50% {
+                transform: translate(calc(var(--dx) * 0.5), calc(var(--dy) * 0.5 - 40px));
+                opacity: 1;
+              }
+              90% {
+                opacity: 1;
+              }
+              100% {
+                transform: translate(var(--dx), var(--dy));
+                opacity: 0;
+              }
+            }
+            .attack-particle {
+              position: absolute;
+              font-size: 24px;
+              animation: flow-particle 1.5s ease-in-out infinite;
+              will-change: transform, opacity;
+              z-index: 9999;
+              filter: drop-shadow(0 0 8px rgba(255, 255, 0, 0.8));
+            }
+          `}
+        </style>
+
+        {/* Draw flowing emoji particles */}
+        {boardPositions.map((position, idx) => {
+          if (!position?.character) return null;
+          const char = position.character;
+
+          // Skip if no target or attacker is dead
+          if (char.targetRow === undefined || char.targetRow === -1) {
+            console.log(`[Particle Skip] No target: ${char.emoji} at [${position.row},${position.col}] - targetRow=${char.targetRow}, targetCol=${char.targetCol}`);
+            return null;
+          }
+          if ((char.currentHP ?? char.hp ?? 0) <= 0) {
+            console.log(`[Particle Skip] Dead attacker: ${char.emoji} at [${position.row},${position.col}]`);
+            return null;
+          }
+
+          console.log(`[Particle CREATE] ${char.emoji} at [${position.row},${position.col}] → target [${char.targetRow},${char.targetCol}]`);
+
+          // Calculate positions using the same helper function
+          const start = getCellCenterPosition(position.row, position.col);
+          const end = getCellCenterPosition(char.targetRow!, char.targetCol!);
+
+          // Calculate distance for animation
+          const dx = end.x - start.x;
+          const dy = end.y - start.y;
+
+          return (
+            <div
+              key={`attack-${idx}`}
+              className="attack-particle"
+              style={{
+                left: `${start.x}px`,
+                top: `${start.y}px`,
+                '--dx': `${dx}px`,
+                '--dy': `${dy}px`,
+              } as React.CSSProperties & { '--dx': string; '--dy': string }}
+            >
+              {char.emoji}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

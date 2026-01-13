@@ -24,6 +24,8 @@ export class Character extends Schema {
   @type('number') currentHP: number = 0; // Current HP in combat (syncs to client)
   @type('number') speed: number = 100; // Attack frequency (higher = faster)
   @type('number') stars: number = 1; // Upgrade level (1-3 stars)
+  @type('number') targetRow: number = -1; // Target position row (-1 = no target)
+  @type('number') targetCol: number = -1; // Target position col (-1 = no target)
 }
 
 /**

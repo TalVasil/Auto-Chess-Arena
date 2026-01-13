@@ -548,6 +548,16 @@ export class AutoChessRoom extends Room<GameState> {
         this.state.timer = 30;
         this.elapsedTime = 0;
 
+        // Clear all character targets from previous combat
+        this.state.players.forEach((player) => {
+          player.board.forEach((pos) => {
+            if (pos.character) {
+              pos.character.targetRow = -1;
+              pos.character.targetCol = -1;
+            }
+          });
+        });
+
         // Give income and regenerate shops for all players
         this.state.players.forEach((player) => {
           player.gold += 5;
@@ -1397,6 +1407,7 @@ export class AutoChessRoom extends Room<GameState> {
 
           // STEP 5.5: ALL characters attack their nearest target
           if (team1Chars.length > 0 && team2Chars.length > 0) {
+            // Both teams have characters - continue combat
             // Team 1 attacks Team 2
             team1Chars.forEach((attacker) => {
               const attackerChar = attacker.pos.character;
@@ -1415,7 +1426,13 @@ export class AutoChessRoom extends Room<GameState> {
                 );
                 if (lockedTarget) {
                   nearestEnemy = lockedTarget;
-                  minDistance = getDistance(attacker.boardPos, lockedTarget.boardPos);
+                  // Mirror enemy position for distance calculation (enemy is on opposite side)
+                  const mirroredTargetPos = {row: lockedTarget.boardPos.row, col: 8 - lockedTarget.boardPos.col};
+                  minDistance = getDistance(attacker.boardPos, mirroredTargetPos);
+
+                  // Set target in schema (locked target still needs to sync to client!)
+                  attackerChar.targetRow = nearestEnemy.boardPos.row;
+                  attackerChar.targetCol = nearestEnemy.boardPos.col;
                 } else {
                   // Locked target died, clear the lock
                   this.targetLocks.delete(attackerKey);
@@ -1425,7 +1442,12 @@ export class AutoChessRoom extends Room<GameState> {
               // If no locked target, find nearest enemy
               if (!nearestEnemy) {
                 team2Chars.forEach((enemy) => {
-                  const distance = getDistance(attacker.boardPos, enemy.boardPos);
+                  // Mirror enemy position for distance calculation (enemy is on opposite side)
+                  const mirroredEnemyPos = {row: enemy.boardPos.row, col: 8 - enemy.boardPos.col};
+                  const distance = getDistance(attacker.boardPos, mirroredEnemyPos);
+                  // Skip enemies at distance 0 (same position - shouldn't happen but prevents self-targeting)
+                  if (distance === 0) return;
+
                   if (distance < minDistance) {
                     minDistance = distance;
                     nearestEnemy = enemy;
@@ -1444,6 +1466,11 @@ export class AutoChessRoom extends Room<GameState> {
                 if (nearestEnemy) {
                   const targetKey = `${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}`;
                   this.targetLocks.set(attackerKey, targetKey);
+
+                  // Set target in schema (DIRECTLY modify existing object for Colyseus sync)
+                  attackerChar.targetRow = nearestEnemy.boardPos.row;
+                  attackerChar.targetCol = nearestEnemy.boardPos.col;
+                  console.log(`🎯 LOCK ${attackerChar.emoji} at [${attacker.boardPos.row},${attacker.boardPos.col}] → target [${attackerChar.targetRow},${attackerChar.targetCol}]`);
                 }
               }
 
@@ -1464,6 +1491,7 @@ export class AutoChessRoom extends Room<GameState> {
             });
 
             // Team 2 attacks Team 1
+            console.log(`\n📍 TEAM 2 TARGETING:`);
             team2Chars.forEach((attacker) => {
               const attackerChar = attacker.pos.character;
               const attackerKey = `${attacker.boardPos.row},${attacker.boardPos.col}`;
@@ -1481,7 +1509,13 @@ export class AutoChessRoom extends Room<GameState> {
                 );
                 if (lockedTarget) {
                   nearestEnemy = lockedTarget;
-                  minDistance = getDistance(attacker.boardPos, lockedTarget.boardPos);
+                  // Mirror enemy position for distance calculation (enemy is on opposite side)
+                  const mirroredTargetPos = {row: lockedTarget.boardPos.row, col: 8 - lockedTarget.boardPos.col};
+                  minDistance = getDistance(attacker.boardPos, mirroredTargetPos);
+
+                  // Set target in schema (locked target still needs to sync to client!)
+                  attackerChar.targetRow = nearestEnemy.boardPos.row;
+                  attackerChar.targetCol = nearestEnemy.boardPos.col;
                 } else {
                   // Locked target died, clear the lock
                   this.targetLocks.delete(attackerKey);
@@ -1491,7 +1525,12 @@ export class AutoChessRoom extends Room<GameState> {
               // If no locked target, find nearest enemy
               if (!nearestEnemy) {
                 team1Chars.forEach((enemy) => {
-                  const distance = getDistance(attacker.boardPos, enemy.boardPos);
+                  // Mirror enemy position for distance calculation (enemy is on opposite side)
+                  const mirroredEnemyPos = {row: enemy.boardPos.row, col: 8 - enemy.boardPos.col};
+                  const distance = getDistance(attacker.boardPos, mirroredEnemyPos);
+                  // Skip enemies at distance 0 (same position - shouldn't happen but prevents self-targeting)
+                  if (distance === 0) return;
+
                   if (distance < minDistance) {
                     minDistance = distance;
                     nearestEnemy = enemy;
@@ -1510,6 +1549,11 @@ export class AutoChessRoom extends Room<GameState> {
                 if (nearestEnemy) {
                   const targetKey = `${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}`;
                   this.targetLocks.set(attackerKey, targetKey);
+
+                  // Set target in schema (DIRECTLY modify existing object for Colyseus sync)
+                  attackerChar.targetRow = nearestEnemy.boardPos.row;
+                  attackerChar.targetCol = nearestEnemy.boardPos.col;
+                  console.log(`🎯 LOCK ${attackerChar.emoji} at [${attacker.boardPos.row},${attacker.boardPos.col}] → target [${attackerChar.targetRow},${attackerChar.targetCol}]`);
                 }
               }
 
@@ -1526,6 +1570,18 @@ export class AutoChessRoom extends Room<GameState> {
                 nearestEnemy.pos.character = updatedTarget;
 
                 console.log(`⚔️ ${attackerChar.name} [${attacker.boardPos.row},${attacker.boardPos.col}] → ${updatedTarget.name} [${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}] : (${minDistance}) dealt ${damage} dmg (HP: ${oldHP} → ${updatedTarget.currentHP})`);
+              }
+            });
+          } else {
+            // One team eliminated - clear targets for surviving characters
+            const allChars = [...team1Chars, ...team2Chars];
+            allChars.forEach((char) => {
+              if (char.pos.character) {
+                const clearedChar = new Character();
+                Object.assign(clearedChar, char.pos.character);
+                clearedChar.targetRow = -1;
+                clearedChar.targetCol = -1;
+                char.pos.character = clearedChar;
               }
             });
           }
@@ -1552,6 +1608,8 @@ export class AutoChessRoom extends Room<GameState> {
             const restoredChar = new Character();
             Object.assign(restoredChar, pos.character);
             restoredChar.currentHP = restoredChar.hp; // Reset to max HP
+            restoredChar.targetRow = -1; // Clear target from previous combat
+            restoredChar.targetCol = -1; // Clear target from previous combat
             pos.character = restoredChar;
             console.log(`♻️ Restored ${restoredChar.name} to full HP (${restoredChar.hp})`);
           }
