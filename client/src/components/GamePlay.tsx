@@ -24,10 +24,17 @@ export function GamePlay() {
   const [selectedArenaPos, setSelectedArenaPos] = useState<{row: number, col: number} | null>(null);
   const [cursorIcon, setCursorIcon] = useState<string | null>(null);
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
-  const [levelUpModal, setLevelUpModal] = useState<{ isOpen: boolean; level: number; message: string }>({
+  const [levelUpModal, setLevelUpModal] = useState<{
+    isOpen: boolean;
+    level: number;
+    message: string;
+    type: 'levelup' | 'victory' | 'defeat' | 'draw' | 'rest' | 'gameover' | 'champion';
+    extraInfo?: string; // For "You got 1 gold!" or "You lost X HP"
+  }>({
     isOpen: false,
     level: 0,
-    message: ''
+    message: '',
+    type: 'levelup'
   });
 
   // Get my player info
@@ -141,7 +148,48 @@ export function GamePlay() {
       setLevelUpModal({
         isOpen: true,
         level: data.newLevel,
-        message: data.message
+        message: data.message,
+        type: 'levelup'
+      });
+    };
+
+    const handleCombatVictory = (data: { message: string; goldEarned: number; opponentName: string }) => {
+      setLevelUpModal({
+        isOpen: true,
+        level: 0,
+        message: data.message,
+        type: 'victory',
+        extraInfo: `You got ${data.goldEarned} gold!`
+      });
+    };
+
+    const handleCombatDefeat = (data: { message: string; damageTaken: number; opponentName: string }) => {
+      setLevelUpModal({
+        isOpen: true,
+        level: 0,
+        message: `You lost to ${data.opponentName}!`,
+        type: 'defeat',
+        extraInfo: `You lost ${data.damageTaken} HP`
+      });
+    };
+
+    const handleCombatDraw = (data: { message: string; damageTaken: number; opponentName: string }) => {
+      setLevelUpModal({
+        isOpen: true,
+        level: 0,
+        message: data.message,
+        type: 'draw',
+        extraInfo: `You both lost ${data.damageTaken} HP`
+      });
+    };
+
+    const handleRestRound = (data: { message: string }) => {
+      setLevelUpModal({
+        isOpen: true,
+        level: 0,
+        message: data.message,
+        type: 'rest',
+        extraInfo: 'No combat this round'
       });
     };
 
@@ -151,12 +199,48 @@ export function GamePlay() {
       leaveGame();
     };
 
-    room.onMessage('level_up', handleLevelUp);
-    room.onMessage('game_cancelled', handleGameCancelled);
+    const handleGameOver = (data: { message: string, finalHP: number, roundNumber: number }) => {
+      console.log('💀 Game Over:', data.message);
+      setLevelUpModal({
+        isOpen: true,
+        level: 0,
+        message: data.message,
+        type: 'gameover',
+        extraInfo: `Eliminated in Round ${data.roundNumber}`
+      });
+    };
+
+    const handleGameWinner = (data: { message: string, finalHP: number, roundNumber: number }) => {
+      console.log('👑 Champion:', data.message);
+      setLevelUpModal({
+        isOpen: true,
+        level: 0,
+        message: data.message,
+        type: 'champion',
+        extraInfo: `Won in Round ${data.roundNumber} with ${data.finalHP} HP`
+      });
+    };
+
+    // Store unsubscribe functions returned by onMessage
+    const unsubLevelUp = room.onMessage('level_up', handleLevelUp);
+    const unsubVictory = room.onMessage('combat_victory', handleCombatVictory);
+    const unsubDefeat = room.onMessage('combat_defeat', handleCombatDefeat);
+    const unsubDraw = room.onMessage('combat_draw', handleCombatDraw);
+    const unsubRest = room.onMessage('rest_round', handleRestRound);
+    const unsubGameOver = room.onMessage('game_over', handleGameOver);
+    const unsubGameWinner = room.onMessage('game_winner', handleGameWinner);
+    const unsubCancelled = room.onMessage('game_cancelled', handleGameCancelled);
 
     return () => {
-      room.onMessage('level_up', () => {}); // Cleanup
-      room.onMessage('game_cancelled', () => {}); // Cleanup
+      // Properly unsubscribe from all message handlers
+      unsubLevelUp();
+      unsubVictory();
+      unsubDefeat();
+      unsubDraw();
+      unsubRest();
+      unsubGameOver();
+      unsubGameWinner();
+      unsubCancelled();
     };
   }, [leaveGame]);
 
@@ -634,17 +718,30 @@ export function GamePlay() {
               textAlign="center"
               mb={6}
             >
-              🎉 Level Up! 🎉
+              {levelUpModal.type === 'victory' && '🎉 Winner! 🎉'}
+              {levelUpModal.type === 'defeat' && '💔 Defeat 💔'}
+              {levelUpModal.type === 'draw' && '😢 Draw 😢'}
+              {levelUpModal.type === 'rest' && '💤 Rest Round 💤'}
+              {levelUpModal.type === 'gameover' && '💀 Game Over 💀'}
+              {levelUpModal.type === 'champion' && '👑 Champion! 👑'}
+              {levelUpModal.type === 'levelup' && '🎉 Level Up! 🎉'}
             </Text>
 
             {/* Body */}
             <VStack gap={3}>
-              <Text color="white" fontSize="xl" fontWeight="bold" textAlign="center">
-                You reached Level {levelUpModal.level}!
-              </Text>
+              {levelUpModal.type === 'levelup' && (
+                <Text color="white" fontSize="xl" fontWeight="bold" textAlign="center">
+                  You reached Level {levelUpModal.level}!
+                </Text>
+              )}
               <Text color="#88d8ff" fontSize="md" textAlign="center">
                 {levelUpModal.message}
               </Text>
+              {levelUpModal.extraInfo && (
+                <Text color="#ffd700" fontSize="lg" fontWeight="bold" textAlign="center">
+                  {levelUpModal.extraInfo}
+                </Text>
+              )}
             </VStack>
 
             {/* Footer */}

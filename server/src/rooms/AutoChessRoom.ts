@@ -17,6 +17,7 @@ export class AutoChessRoom extends Room<GameState> {
   private savedMatchupsForRecovery: any[] = []; // Store original matchups during recovery
   private mockCombatInterval: NodeJS.Timeout | null = null; // Store interval to clear it later
   private targetLocks: Map<string, string> = new Map(); // Track which character is targeting which (attackerPos → targetPos)
+  private characterNextAttackTime: Map<string, number> = new Map(); // characterKey → next attack timestamp
 
   onCreate(options: any) {
     console.log('AutoChessRoom created!', options);
@@ -1367,18 +1368,53 @@ export class AutoChessRoom extends Room<GameState> {
         roundNumber: this.state.roundNumber,
       });
 
+      // Send rest message to bye player (odd number of players)
+      if (this.state.byePlayerId) {
+        const byeClient = Array.from(this.clients).find(c => c.sessionId === this.state.byePlayerId);
+        const byePlayer = this.state.players.get(this.state.byePlayerId);
+
+        if (byeClient && byePlayer) {
+          byeClient.send('rest_round', {
+            message: 'Rest Round',
+          });
+          console.log(`💤 Sent rest message to ${byePlayer.username}`);
+        }
+      }
+
       // Note: Phase change will be automatically synced via Colyseus onStateChange
+
+      const COMBAT_DEBUG = false; // Toggle: true = detailed logs, false = summary only
 
       // Helper function: Calculate distance between two positions (Manhattan distance)
       const getDistance = (pos1: {row: number, col: number}, pos2: {row: number, col: number}): number => {
         return Math.abs(pos1.row - pos2.row) + Math.abs(pos1.col - pos2.col);
       };
 
-      // TODO: Simulate combat
-      // TEMPORARY MOCK: Test targeting system
-      console.log('⚔️ COMBAT: Starting attack interval');
+      // Helper function: Calculate attack cooldown based on character speed
+      const getAttackCooldown = (speed: number): number => {
+        return 10000 / (speed / 10); // Speed 10 = 1000ms (1 attack/sec), Speed 20 = 500ms (2 attacks/sec)
+      };
+
+      // Combat statistics tracking
+      const combatStats = {
+        totalAttacks: 0,
+        totalDamage: 0,
+        team1Attacks: 0,
+        team2Attacks: 0,
+        team1Damage: 0,
+        team2Damage: 0
+      };
+
+      // Start speed-based combat system
+      console.log('⚔️ COMBAT: Starting speed-based combat');
+      this.characterNextAttackTime.clear();
+
+      // Track which matchups have been forfeited (to prevent infinite loop on disconnect)
+      const processedForfeits = new Set<string>();
+
+      // Combat tick runs every 50ms to check for attacks
       this.mockCombatInterval = setInterval(() => {
-        // Get matchups for this combat
+        const currentTime = Date.now();
         const matchups = this.state.currentMatchups;
         if (matchups.length === 0) return;
 
@@ -1387,7 +1423,42 @@ export class AutoChessRoom extends Room<GameState> {
           const player1 = this.state.players.get(matchup.player1Id);
           const player2 = this.state.players.get(matchup.player2Id);
 
-          if (!player1 || !player2) return;
+          // Handle disconnected player - award win to connected player (ONCE per matchup)
+          if (!player1 || !player2) {
+            const matchupKey = `${matchup.player1Id}-${matchup.player2Id}`;
+
+            // Skip if already processed this forfeit
+            if (processedForfeits.has(matchupKey)) {
+              return;
+            }
+
+            const connectedPlayer = player1 || player2;
+            const disconnectedPlayerId = !player1 ? matchup.player1Id : matchup.player2Id;
+
+            if (connectedPlayer) {
+              // Award +1 gold to connected player (only once!)
+              connectedPlayer.gold += 1;
+
+              console.log(`🏆 ${connectedPlayer.username} wins by forfeit (opponent disconnected) (+1 gold → ${connectedPlayer.gold})`);
+
+              // Send victory message (only once!)
+              const connectedClient = Array.from(this.clients).find(
+                (c) => c.sessionId === (player1 ? matchup.player1Id : matchup.player2Id)
+              );
+              if (connectedClient) {
+                connectedClient.send('combat_victory', {
+                  message: 'Opponent disconnected - You win!',
+                  goldEarned: 1,
+                  opponentName: 'Disconnected Player'
+                });
+              }
+
+              // Mark this matchup as processed
+              processedForfeits.add(matchupKey);
+            }
+
+            return; // Skip combat for this matchup
+          }
 
           // Get alive characters from both teams
           const team1Chars: Array<{pos: any, boardPos: {row: number, col: number}}> = [];
@@ -1405,13 +1476,124 @@ export class AutoChessRoom extends Room<GameState> {
             }
           });
 
-          // STEP 5.5: ALL characters attack their nearest target
+          // Check elimination BEFORE processing attacks
+          if (team1Chars.length === 0 || team2Chars.length === 0) {
+            // Combat is over! Determine winner
+            const player1Won = team1Chars.length > 0;
+            const player2Won = team2Chars.length > 0;
+            const winner = player1Won ? player1 : (player2Won ? player2 : null);
+            const loser = player1Won ? player2 : (player2Won ? player1 : null);
+
+            // Show combat summary (always visible) - single line
+            console.log(`⚔️ Combat Summary: ${combatStats.totalAttacks} attacks, ${combatStats.totalDamage} damage | Team1: ${combatStats.team1Attacks} attacks, ${combatStats.team1Damage} dmg | Team2: ${combatStats.team2Attacks} attacks, ${combatStats.team2Damage} dmg | Result: Team1=${team1Chars.length} vs Team2=${team2Chars.length}`);
+
+            if (winner && loser) {
+              // Normal case: One team won
+              // Award winner +1 gold
+              winner.gold += 1;
+
+              // Calculate damage to loser (based on surviving enemy units * round number)
+              const survivingUnits = player1Won ? team1Chars.length : team2Chars.length;
+              const damageToPlayer = survivingUnits * this.state.roundNumber;
+              loser.hp = Math.max(0, loser.hp - damageToPlayer);
+
+              console.log(`🏆 Winner: ${winner.username} (+1 gold → ${winner.gold}) | 💔 Loser: ${loser.username} (-${damageToPlayer} HP → ${loser.hp})`);
+
+              // Send victory message to winner
+              const winnerClient = Array.from(this.clients).find(
+                (c) => c.sessionId === (player1Won ? matchup.player1Id : matchup.player2Id)
+              );
+              if (winnerClient) {
+                winnerClient.send('combat_victory', {
+                  message: `${winner.username} has won this match!`,
+                  goldEarned: 1,
+                  opponentName: loser.username
+                });
+              }
+
+              // Send defeat message to loser
+              const loserClient = Array.from(this.clients).find(
+                (c) => c.sessionId === (player1Won ? matchup.player2Id : matchup.player1Id)
+              );
+              if (loserClient) {
+                loserClient.send('combat_defeat', {
+                  message: `You lost to ${winner.username}!`,
+                  damageTaken: damageToPlayer,
+                  opponentName: winner.username
+                });
+              }
+            } else if (!winner && !loser) {
+              // Draw case: Both teams eliminated simultaneously
+              const drawDamage = 2; // Fixed damage for draws
+              player1.hp = Math.max(0, player1.hp - drawDamage);
+              player2.hp = Math.max(0, player2.hp - drawDamage);
+
+              console.log(`🤝 DRAW: ${player1.username} (HP: ${player1.hp}) and ${player2.username} (HP: ${player2.hp}) both lost ${drawDamage} HP`);
+
+              // Send draw message to both players
+              const player1Client = Array.from(this.clients).find(
+                (c) => c.sessionId === matchup.player1Id
+              );
+              const player2Client = Array.from(this.clients).find(
+                (c) => c.sessionId === matchup.player2Id
+              );
+
+              if (player1Client) {
+                player1Client.send('combat_draw', {
+                  message: 'You both lose 2 HP',
+                  damageTaken: drawDamage,
+                  opponentName: player2.username
+                });
+              }
+
+              if (player2Client) {
+                player2Client.send('combat_draw', {
+                  message: 'You both lose 2 HP',
+                  damageTaken: drawDamage,
+                  opponentName: player1.username
+                });
+              }
+            }
+
+            // Clear targets for all characters
+            const allChars = [...team1Chars, ...team2Chars];
+            allChars.forEach((char) => {
+              if (char.pos.character) {
+                const clearedChar = new Character();
+                Object.assign(clearedChar, char.pos.character);
+                clearedChar.targetRow = -1;
+                clearedChar.targetCol = -1;
+                char.pos.character = clearedChar;
+              }
+            });
+
+            // Clear combat interval to end combat
+            if (this.mockCombatInterval) {
+              clearInterval(this.mockCombatInterval);
+              this.mockCombatInterval = null;
+              console.log('✅ Combat interval cleared - will transition to next phase');
+            }
+
+            return; // Exit this matchup processing
+          }
+
+          // Process speed-based attacks for each character
           if (team1Chars.length > 0 && team2Chars.length > 0) {
             // Both teams have characters - continue combat
-            // Team 1 attacks Team 2
+            // Team 1 attacks Team 2 (speed-based)
             team1Chars.forEach((attacker) => {
               const attackerChar = attacker.pos.character;
-              const attackerKey = `${attacker.boardPos.row},${attacker.boardPos.col}`;
+              const attackerKey = `${matchup.player1Id}_${attacker.boardPos.row}_${attacker.boardPos.col}`;
+
+              // Check if this character is ready to attack based on speed
+              const nextAttackTime = this.characterNextAttackTime.get(attackerKey) || 0;
+              if (currentTime < nextAttackTime) {
+                return; // Not ready to attack yet
+              }
+
+              // Calculate attack cooldown based on speed
+              const attackCooldown = getAttackCooldown(attackerChar.speed);
+              this.characterNextAttackTime.set(attackerKey, currentTime + attackCooldown);
 
               // Check if this character already has a locked target
               let nearestEnemy = null;
@@ -1470,7 +1652,10 @@ export class AutoChessRoom extends Room<GameState> {
                   // Set target in schema (DIRECTLY modify existing object for Colyseus sync)
                   attackerChar.targetRow = nearestEnemy.boardPos.row;
                   attackerChar.targetCol = nearestEnemy.boardPos.col;
-                  console.log(`🎯 LOCK ${attackerChar.emoji} at [${attacker.boardPos.row},${attacker.boardPos.col}] → target [${attackerChar.targetRow},${attackerChar.targetCol}]`);
+
+                  if (COMBAT_DEBUG) {
+                    console.log(`🎯 LOCK ${attackerChar.emoji} at [${attacker.boardPos.row},${attacker.boardPos.col}] → target [${attackerChar.targetRow},${attackerChar.targetCol}]`);
+                  }
                 }
               }
 
@@ -1486,15 +1671,32 @@ export class AutoChessRoom extends Room<GameState> {
                 updatedTarget.currentHP = Math.max(0, targetChar.currentHP - damage);
                 nearestEnemy.pos.character = updatedTarget;
 
-                console.log(`⚔️ ${attackerChar.name} [${attacker.boardPos.row},${attacker.boardPos.col}] → ${updatedTarget.name} [${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}] : (${minDistance}) dealt ${damage} dmg (HP: ${oldHP} → ${updatedTarget.currentHP})`);
+                // Track stats (always)
+                combatStats.totalAttacks++;
+                combatStats.totalDamage += damage;
+                combatStats.team1Attacks++;
+                combatStats.team1Damage += damage;
+
+                if (COMBAT_DEBUG) {
+                  console.log(`⚔️ ${attackerChar.name} [${attacker.boardPos.row},${attacker.boardPos.col}] → ${updatedTarget.name} [${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}] : (${minDistance}) dealt ${damage} dmg (HP: ${oldHP} → ${updatedTarget.currentHP})`);
+                }
               }
             });
 
-            // Team 2 attacks Team 1
-            console.log(`\n📍 TEAM 2 TARGETING:`);
+            // Team 2 attacks Team 1 (speed-based)
             team2Chars.forEach((attacker) => {
               const attackerChar = attacker.pos.character;
-              const attackerKey = `${attacker.boardPos.row},${attacker.boardPos.col}`;
+              const attackerKey = `${matchup.player2Id}_${attacker.boardPos.row}_${attacker.boardPos.col}`;
+
+              // Check if this character is ready to attack based on speed
+              const nextAttackTime = this.characterNextAttackTime.get(attackerKey) || 0;
+              if (currentTime < nextAttackTime) {
+                return; // Not ready to attack yet
+              }
+
+              // Calculate attack cooldown based on speed
+              const attackCooldown = getAttackCooldown(attackerChar.speed);
+              this.characterNextAttackTime.set(attackerKey, currentTime + attackCooldown);
 
               // Check if this character already has a locked target
               let nearestEnemy = null;
@@ -1553,7 +1755,10 @@ export class AutoChessRoom extends Room<GameState> {
                   // Set target in schema (DIRECTLY modify existing object for Colyseus sync)
                   attackerChar.targetRow = nearestEnemy.boardPos.row;
                   attackerChar.targetCol = nearestEnemy.boardPos.col;
-                  console.log(`🎯 LOCK ${attackerChar.emoji} at [${attacker.boardPos.row},${attacker.boardPos.col}] → target [${attackerChar.targetRow},${attackerChar.targetCol}]`);
+
+                  if (COMBAT_DEBUG) {
+                    console.log(`🎯 LOCK ${attackerChar.emoji} at [${attacker.boardPos.row},${attacker.boardPos.col}] → target [${attackerChar.targetRow},${attackerChar.targetCol}]`);
+                  }
                 }
               }
 
@@ -1569,7 +1774,15 @@ export class AutoChessRoom extends Room<GameState> {
                 updatedTarget.currentHP = Math.max(0, targetChar.currentHP - damage);
                 nearestEnemy.pos.character = updatedTarget;
 
-                console.log(`⚔️ ${attackerChar.name} [${attacker.boardPos.row},${attacker.boardPos.col}] → ${updatedTarget.name} [${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}] : (${minDistance}) dealt ${damage} dmg (HP: ${oldHP} → ${updatedTarget.currentHP})`);
+                // Track stats (always)
+                combatStats.totalAttacks++;
+                combatStats.totalDamage += damage;
+                combatStats.team2Attacks++;
+                combatStats.team2Damage += damage;
+
+                if (COMBAT_DEBUG) {
+                  console.log(`⚔️ ${attackerChar.name} [${attacker.boardPos.row},${attacker.boardPos.col}] → ${updatedTarget.name} [${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}] : (${minDistance}) dealt ${damage} dmg (HP: ${oldHP} → ${updatedTarget.currentHP})`);
+                }
               }
             });
           } else {
@@ -1586,7 +1799,7 @@ export class AutoChessRoom extends Room<GameState> {
             });
           }
         });
-      }, 2000);
+      }, 50); // Check for attacks every 50ms (20 ticks/second)
     } else if (this.state.phase === 'COMBAT') {
       // Transition from COMBAT back to PREPARATION
 
@@ -1597,11 +1810,14 @@ export class AutoChessRoom extends Room<GameState> {
         console.log('🛑 MOCK COMBAT: Interval cleared');
       }
 
-      // Clear target locks for next round
+      // Clear target locks and attack timings for next round
       this.targetLocks.clear();
+      this.characterNextAttackTime.clear();
 
       // Reset all characters to full HP (they're still on board, just at 0 HP)
       this.state.players.forEach((player) => {
+        let restoredCount = 0;
+
         player.board.forEach((pos) => {
           if (pos?.character) {
             // Clone and reset HP
@@ -1611,10 +1827,53 @@ export class AutoChessRoom extends Room<GameState> {
             restoredChar.targetRow = -1; // Clear target from previous combat
             restoredChar.targetCol = -1; // Clear target from previous combat
             pos.character = restoredChar;
-            console.log(`♻️ Restored ${restoredChar.name} to full HP (${restoredChar.hp})`);
+            restoredCount++;
           }
         });
+
+        if (restoredCount > 0) {
+          console.log(`♻️ ${player.username}: ${restoredCount} characters restored to full HP`);
+        }
       });
+
+      // Check for eliminated players (HP <= 0) and send game over message
+      this.state.players.forEach((player) => {
+        if (player.hp <= 0) {
+          const eliminatedClient = Array.from(this.clients).find(
+            (c) => c.sessionId === player.id
+          );
+
+          if (eliminatedClient) {
+            eliminatedClient.send('game_over', {
+              message: 'You have been eliminated!',
+              finalHP: 0,
+              roundNumber: this.state.roundNumber
+            });
+            console.log(`💀 ${player.username} has been eliminated (HP: 0)`);
+          }
+        }
+      });
+
+      // Check for game winner (only one player with HP > 0)
+      const alivePlayers = Array.from(this.state.players.values()).filter(p => p.hp > 0);
+      if (alivePlayers.length === 1) {
+        const winner = alivePlayers[0];
+        const winnerClient = Array.from(this.clients).find(
+          (c) => c.sessionId === winner.id
+        );
+
+        if (winnerClient) {
+          winnerClient.send('game_winner', {
+            message: 'You are the champion!',
+            finalHP: winner.hp,
+            roundNumber: this.state.roundNumber
+          });
+        }
+        console.log(`👑 ${winner.username} wins the game! (HP: ${winner.hp}, Round: ${this.state.roundNumber})`);
+
+        this.state.phase = 'GAME_END';
+        return; // Don't continue to next round
+      }
 
       this.state.roundNumber++;
       this.state.phase = 'PREPARATION';

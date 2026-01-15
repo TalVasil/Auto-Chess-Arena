@@ -55,9 +55,10 @@ export class CombatService {
    * - Random selection from available pool
    * - Handle odd number of players (one gets bye)
    */
-  createMatchups(playerIds: string[], roundNumber: number, playerNames?: Map<string, string>): CombatMatchup[] {
+  createMatchups(playerIds: string[], roundNumber: number, playerNames?: Map<string, string>): { matchups: CombatMatchup[], byePlayerId: string | null } {
     const matchups: CombatMatchup[] = [];
     const availablePlayers = [...playerIds];
+    let byePlayerId: string | null = null;
 
     console.log(`\n⚔️ Creating matchups for Round ${roundNumber}`);
     console.log(`📋 Available players: ${availablePlayers.length}`);
@@ -108,16 +109,16 @@ export class CombatService {
 
     // Handle remaining player (bye round)
     if (availablePlayers.length === 1) {
-      const byePlayer = availablePlayers[0];
-      const byePlayerName = playerNames?.get(byePlayer) || byePlayer;
-      console.log(`🛡️ Player ${byePlayerName} gets a BYE round`);
+      byePlayerId = availablePlayers[0];
+      const byePlayerName = playerNames?.get(byePlayerId) || byePlayerId;
+      console.log(`💤 Player ${byePlayerName} gets a REST round`);
 
       // Clear their history so they can fight anyone next round
-      this.resetPlayerHistory(byePlayer);
+      this.resetPlayerHistory(byePlayerId);
     }
 
     console.log(`✅ Created ${matchups.length} matchups\n`);
-    return matchups;
+    return { matchups, byePlayerId };
   }
 
   /**

@@ -56,7 +56,12 @@ export async function query(text: string, params?: any[]) {
   try {
     const res = await pool.query(text, params);
     const duration = Date.now() - start;
-    console.log(`📊 Executed query in ${duration}ms:`, { text, duration, rows: res.rowCount });
+
+    // Extract query type (INSERT, SELECT, UPDATE, etc.)
+    const queryType = text.trim().split(' ')[0].toUpperCase();
+    const tableName = text.match(/(?:FROM|INTO|UPDATE)\s+(\w+)/i)?.[1] || 'unknown';
+
+    console.log(`📊 ${queryType} ${tableName} (${duration}ms, ${res.rowCount} rows)`);
     return res;
   } catch (error) {
     console.error('❌ Query error:', error);

@@ -83,6 +83,8 @@ export class GameState extends Schema {
   @type({ map: Player }) players = new MapSchema<Player>(); // All players in the game
   @type([Matchup]) currentMatchups = new ArraySchema<Matchup>(); // Combat pairings for current round
 
+  byePlayerId: string | null = null; // Player with no opponent this round (not synced to client)
+
   addPlayer(sessionId: string, displayName: string, userId: number) {
     const player = new Player();
     player.id = sessionId;
@@ -147,7 +149,10 @@ export class GameState extends Schema {
     });
 
     // Generate matchups using CombatService
-    const matchupPairs = combatService.createMatchups(alivePlayerIds, roundNumber, playerNames);
+    const { matchups: matchupPairs, byePlayerId } = combatService.createMatchups(alivePlayerIds, roundNumber, playerNames);
+
+    // Store bye player for later use
+    this.byePlayerId = byePlayerId;
 
     // Convert to Matchup schema objects with player names
     for (const pair of matchupPairs) {

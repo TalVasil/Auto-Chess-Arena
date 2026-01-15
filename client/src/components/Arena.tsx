@@ -1,6 +1,8 @@
 import React from 'react';
 import './Arena.css';
 
+const DEBUG_PARTICLES = false; // Toggle: true = particle logs, false = silent
+
 // Helper function to trigger attack animation (for testing)
 export const triggerAttackAnimation = (characterId: string) => {
   const element = document.querySelector(`[data-char-id="${characterId}"]`);
@@ -211,15 +213,21 @@ export function Arena({ boardPositions, selectedArenaPos, onCellClick }: ArenaPr
 
           // Skip if no target or attacker is dead
           if (char.targetRow === undefined || char.targetRow === -1) {
-            console.log(`[Particle Skip] No target: ${char.emoji} at [${position.row},${position.col}] - targetRow=${char.targetRow}, targetCol=${char.targetCol}`);
+            if (DEBUG_PARTICLES) {
+              console.log(`[Particle Skip] No target: ${char.emoji} at [${position.row},${position.col}] - targetRow=${char.targetRow}, targetCol=${char.targetCol}`);
+            }
             return null;
           }
           if ((char.currentHP ?? char.hp ?? 0) <= 0) {
-            console.log(`[Particle Skip] Dead attacker: ${char.emoji} at [${position.row},${position.col}]`);
+            if (DEBUG_PARTICLES) {
+              console.log(`[Particle Skip] Dead attacker: ${char.emoji} at [${position.row},${position.col}]`);
+            }
             return null;
           }
 
-          console.log(`[Particle CREATE] ${char.emoji} at [${position.row},${position.col}] → target [${char.targetRow},${char.targetCol}]`);
+          if (DEBUG_PARTICLES) {
+            console.log(`[Particle CREATE] ${char.emoji} at [${position.row},${position.col}] → target [${char.targetRow},${char.targetCol}]`);
+          }
 
           // Calculate positions using the same helper function
           const start = getCellCenterPosition(position.row, position.col);
