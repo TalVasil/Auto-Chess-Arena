@@ -16,6 +16,8 @@ export interface Character {
   hp: number;
   currentHP: number; // Current HP during combat
   stars: number;
+  targetRow?: number; // Target position row (-1 = no target)
+  targetCol?: number; // Target position col (-1 = no target)
 }
 
 // Board position interface
@@ -392,6 +394,11 @@ export const useGameStore = create<GameStoreState>()(
 
           const board: BoardPosition[] = [];
           player.board?.forEach((pos: any) => {
+            // DEBUG: Log what Colyseus is sending for targetRow
+            if (pos.character && state.phase === 'COMBAT') {
+              console.log(`📡 COLYSEUS RAW [${player.username}]: ${pos.character.emoji} at [${pos.row},${pos.col}] - targetRow=${pos.character.targetRow}, targetCol=${pos.character.targetCol}`);
+            }
+
             board.push({
               row: pos.row,
               col: pos.col,

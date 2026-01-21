@@ -36,6 +36,7 @@ export function GamePlay() {
     message: '',
     type: 'levelup'
   });
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Get my player info
   const myPlayer = players.find((p) => p.id === mySessionId);
@@ -221,6 +222,13 @@ export function GamePlay() {
       });
     };
 
+    const handleError = (data: { message: string }) => {
+      console.log('❌ Error:', data.message);
+      setErrorMessage(data.message);
+      // Auto-hide after 3 seconds
+      setTimeout(() => setErrorMessage(null), 3000);
+    };
+
     // Store unsubscribe functions returned by onMessage
     const unsubLevelUp = room.onMessage('level_up', handleLevelUp);
     const unsubVictory = room.onMessage('combat_victory', handleCombatVictory);
@@ -230,6 +238,7 @@ export function GamePlay() {
     const unsubGameOver = room.onMessage('game_over', handleGameOver);
     const unsubGameWinner = room.onMessage('game_winner', handleGameWinner);
     const unsubCancelled = room.onMessage('game_cancelled', handleGameCancelled);
+    const unsubError = room.onMessage('error', handleError);
 
     return () => {
       // Properly unsubscribe from all message handlers
@@ -241,6 +250,7 @@ export function GamePlay() {
       unsubGameOver();
       unsubGameWinner();
       unsubCancelled();
+      unsubError();
     };
   }, [leaveGame]);
 
@@ -251,6 +261,8 @@ export function GamePlay() {
 
   // Handle selecting character from bench
   const handleSelectCharacter = (index: number) => {
+    if (!myPlayer) return;
+
     // If clicking the same bench character, deselect it
     if (selectedBenchIndex === index) {
       setSelectedBenchIndex(null);
@@ -258,8 +270,29 @@ export function GamePlay() {
       return;
     }
 
+    // If another bench character is already selected, swap them
+    if (selectedBenchIndex !== null) {
+      gameClient.send('swap_bench', { fromIndex: selectedBenchIndex, toIndex: index });
+      setSelectedBenchIndex(null);
+      setCursorIcon(null);
+      return;
+    }
+
+    // If arena character is selected, swap bench <-> arena
+    if (selectedArenaPos && phase !== 'COMBAT') {
+      gameClient.send('swap_bench_arena', {
+        benchIndex: index,
+        row: selectedArenaPos.row,
+        col: selectedArenaPos.col
+      });
+      setSelectedArenaPos(null);
+      setCursorIcon(null);
+      return;
+    }
+
+    // Otherwise, select this bench character
     setSelectedBenchIndex(index);
-    setSelectedArenaPos(null); // Clear any arena selection
+    setSelectedArenaPos(null);
 
     // Get the character's emoji for the cursor
     const character = myPlayer?.bench[index];
@@ -353,14 +386,23 @@ export function GamePlay() {
     }
 
     if (existingCharacter && selectedArenaPos) {
-      // Moving from one arena position to another
-      gameClient.send('move_on_board', {
+      // Swap two arena characters
+      gameClient.send('swap_arena', {
         fromRow: selectedArenaPos.row,
         fromCol: selectedArenaPos.col,
         toRow: row,
         toCol: col
       });
       setSelectedArenaPos(null);
+      setSelectedBenchIndex(null);
+      setCursorIcon(null);
+    } else if (existingCharacter && selectedBenchIndex !== null) {
+      // Swap bench character with arena character
+      gameClient.send('swap_bench_arena', {
+        benchIndex: selectedBenchIndex,
+        row,
+        col
+      });
       setSelectedBenchIndex(null);
       setCursorIcon(null);
     } else if (existingCharacter && !selectedBenchIndex && !selectedArenaPos) {
@@ -427,6 +469,12 @@ export function GamePlay() {
       <HStack maxW="1400px" mx="auto" mb={2} justifyContent="space-between" alignItems="flex-start">
         {/* Player Stats - Compact */}
         <HStack gap={2}>
+          {/* Username Display */}
+          <Box bg="rgba(138, 43, 226, 0.3)" px={3} py={2} borderRadius="md" border="1px solid #8a2be2">
+            <Text fontSize="sm" color="white" fontWeight="bold">
+              👤 {myPlayer.username}
+            </Text>
+          </Box>
           <Box bg="rgba(255, 0, 0, 0.2)" px={3} py={2} borderRadius="md" border="1px solid #ff4444">
             <Text fontSize="sm" color="#ff4444" fontWeight="bold">
               ❤️ {myPlayer.hp}
@@ -557,6 +605,58 @@ export function GamePlay() {
           </button>
         </HStack>
       </HStack>
+
+      {/* Error Notification Toast */}
+      {errorMessage && (
+        <Box
+          position="fixed"
+          top={4}
+          left="50%"
+          transform="translateX(-50%)"
+          bg="rgba(255, 0, 0, 0.9)"
+          border="2px solid #ff4444"
+          borderRadius="lg"
+          px={6}
+          py={3}
+          zIndex={2000}
+          boxShadow="0 4px 20px rgba(255, 0, 0, 0.5)"
+        >
+          <Text fontSize="md" fontWeight="bold" color="white">
+            ⚠️ {errorMessage}
+          </Text>
+        </Box>
+      )}
+
+      {/* Eliminated Player Banner */}
+      {myPlayer.isEliminated && (
+        <Box
+          bg="rgba(255, 0, 0, 0.3)"
+          border="2px solid #ff0000"
+          borderRadius="lg"
+          px={6}
+          py={4}
+          maxW="1400px"
+          mx="auto"
+          mb={2}
+          textAlign="center"
+        >
+          <Text fontSize="xl" fontWeight="bold" color="#ff6666" mb={2}>
+            💀 You have been eliminated! 💀
+          </Text>
+          <Button
+            bg="linear-gradient(135deg, #8a2be2 0%, #6a1bb2 100%)"
+            color="white"
+            onClick={leaveGame}
+            size="lg"
+            _hover={{
+              transform: 'translateY(-2px)',
+              boxShadow: '0 8px 30px rgba(138, 43, 226, 0.6)',
+            }}
+          >
+            Back to Lobby
+          </Button>
+        </Box>
+      )}
 
       {/* Main Game Area - Arena, Bench, and Shop stacked vertically */}
       <VStack gap={2} maxW="1400px" mx="auto" alignItems="center">
@@ -697,18 +797,21 @@ export function GamePlay() {
             boxShadow="0 8px 32px rgba(138, 43, 226, 0.5)"
           >
             {/* Close button */}
-            <Box
-              position="absolute"
-              top={4}
-              right={4}
-              cursor="pointer"
-              onClick={() => setLevelUpModal({ ...levelUpModal, isOpen: false })}
-              color="white"
-              fontSize="xl"
-              _hover={{ color: '#8a2be2' }}
-            >
-              ✕
-            </Box>
+            {/* Hide close button for game over/champion - must use Back to Lobby */}
+            {levelUpModal.type !== 'gameover' && levelUpModal.type !== 'champion' && (
+              <Box
+                position="absolute"
+                top={4}
+                right={4}
+                cursor="pointer"
+                onClick={() => setLevelUpModal({ ...levelUpModal, isOpen: false })}
+                color="white"
+                fontSize="xl"
+                _hover={{ color: '#8a2be2' }}
+              >
+                ✕
+              </Box>
+            )}
 
             {/* Header */}
             <Text
@@ -745,19 +848,37 @@ export function GamePlay() {
             </VStack>
 
             {/* Footer */}
-            <Box display="flex" justifyContent="center" mt={6}>
-              <Button
-                bg="linear-gradient(135deg, #8a2be2 0%, #6a1bb2 100%)"
-                color="white"
-                onClick={() => setLevelUpModal({ ...levelUpModal, isOpen: false })}
-                size="lg"
-                _hover={{
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 8px 30px rgba(138, 43, 226, 0.6)',
-                }}
-              >
-                Got it!
-              </Button>
+            <Box display="flex" justifyContent="center" gap={4} mt={6}>
+              {(levelUpModal.type === 'gameover' || levelUpModal.type === 'champion') ? (
+                <Button
+                  bg="linear-gradient(135deg, #8a2be2 0%, #6a1bb2 100%)"
+                  color="white"
+                  onClick={() => {
+                    setLevelUpModal({ ...levelUpModal, isOpen: false });
+                    leaveGame();
+                  }}
+                  size="lg"
+                  _hover={{
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 8px 30px rgba(138, 43, 226, 0.6)',
+                  }}
+                >
+                  Back to Lobby
+                </Button>
+              ) : (
+                <Button
+                  bg="linear-gradient(135deg, #8a2be2 0%, #6a1bb2 100%)"
+                  color="white"
+                  onClick={() => setLevelUpModal({ ...levelUpModal, isOpen: false })}
+                  size="lg"
+                  _hover={{
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 8px 30px rgba(138, 43, 226, 0.6)',
+                  }}
+                >
+                  Got it!
+                </Button>
+              )}
             </Box>
           </Box>
         </>

@@ -24,8 +24,7 @@ export const CHARACTERS: ICharacter[] = [
     defense: 40,
     hp: 500,
     speed: 80,
-    imageUrl: '/assets/characters/knight.png',
-    abilities: [
+        abilities: [
       {
         id: 'shield_bash',
         name: 'Shield Bash',
@@ -46,8 +45,7 @@ export const CHARACTERS: ICharacter[] = [
     defense: 20,
     hp: 400,
     speed: 120,
-    imageUrl: '/assets/characters/archer.png',
-    abilities: [
+        abilities: [
       {
         id: 'piercing_arrow',
         name: 'Piercing Arrow',
@@ -67,8 +65,7 @@ export const CHARACTERS: ICharacter[] = [
     defense: 15,
     hp: 350,
     speed: 90,
-    imageUrl: '/assets/characters/mage.png',
-    abilities: [
+        abilities: [
       {
         id: 'fireball',
         name: 'Fireball',
@@ -88,8 +85,7 @@ export const CHARACTERS: ICharacter[] = [
     defense: 60,
     hp: 700,
     speed: 70,
-    imageUrl: '/assets/characters/paladin.png',
-    abilities: [
+        abilities: [
       {
         id: 'holy_shield',
         name: 'Holy Shield',
@@ -109,8 +105,7 @@ export const CHARACTERS: ICharacter[] = [
     defense: 25,
     hp: 450,
     speed: 150,
-    imageUrl: '/assets/characters/assassin.png',
-    abilities: [
+        abilities: [
       {
         id: 'backstab',
         name: 'Backstab',
@@ -130,8 +125,7 @@ export const CHARACTERS: ICharacter[] = [
     defense: 35,
     hp: 500,
     speed: 100,
-    imageUrl: '/assets/characters/cleric.png',
-    abilities: [
+        abilities: [
       {
         id: 'heal',
         name: 'Healing Light',
@@ -151,8 +145,7 @@ export const CHARACTERS: ICharacter[] = [
     defense: 50,
     hp: 800,
     speed: 85,
-    imageUrl: '/assets/characters/dragon_knight.png',
-    abilities: [
+        abilities: [
       {
         id: 'dragon_breath',
         name: 'Dragon Breath',
@@ -172,8 +165,7 @@ export const CHARACTERS: ICharacter[] = [
     defense: 30,
     hp: 600,
     speed: 95,
-    imageUrl: '/assets/characters/archmage.png',
-    abilities: [
+        abilities: [
       {
         id: 'meteor',
         name: 'Meteor Storm',

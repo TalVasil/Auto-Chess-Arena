@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Box, Heading, Text, Badge, Button, Grid, VStack, HStack } from '@chakra-ui/react';
 import { useGameStore } from '../store/gameStore';
 import { gameClient } from '../network/GameClient';
@@ -22,6 +22,11 @@ export function GameLobby() {
     logout,
   } = useGameStore();
 
+  const [rulesModal, setRulesModal] = useState<{ isOpen: boolean; rules: string[] }>({
+    isOpen: false,
+    rules: []
+  });
+
   // Auto-connect on mount
   useEffect(() => {
     // Only connect if not already connected or connecting
@@ -32,6 +37,20 @@ export function GameLobby() {
     // DON'T disconnect on unmount - we want to allow reconnection on page refresh
     // Disconnect only happens when user clicks Logout button
   }, []); // Empty deps - only run once on mount
+
+  // Listen for game rules message
+  useEffect(() => {
+    const room = gameClient.getRoom();
+    if (!room) return;
+
+    const handleGameRules = (data: { rules: string[] }) => {
+      console.log('📜 Received game rules');
+      setRulesModal({ isOpen: true, rules: data.rules });
+    };
+
+    const unsub = room.onMessage('game_rules', handleGameRules);
+    return () => unsub();
+  }, [isConnected]);
 
   // Get connection status display
   const getStatusDisplay = () => {
@@ -152,11 +171,13 @@ export function GameLobby() {
                       {player.id === mySessionId && '👑 '}
                       {player.username}
                     </Text>
-                    {player.isReady && (
-                      <Badge colorScheme="green" variant="solid">
-                        ✓ Ready
-                      </Badge>
-                    )}
+                    <HStack gap={2}>
+                      {player.isReady && (
+                        <Badge colorScheme={player.hasAcknowledgedRules ? "green" : "yellow"} variant="solid">
+                          {player.hasAcknowledgedRules ? '✓ Ready' : '📖 Reading...'}
+                        </Badge>
+                      )}
+                    </HStack>
                   </Box>
                 ))}
               </Grid>
@@ -197,8 +218,13 @@ export function GameLobby() {
               </Button>
 
               <Text fontSize="lg" color="#00d4ff" fontWeight="bold">
-                {players.filter(p => p.isReady).length} / {players.length} players ready
+                {players.filter(p => p.isReady).length} / 8 players ready
               </Text>
+              {players.filter(p => p.isReady).length > 0 && (
+                <Text fontSize="sm" color={players.every(p => !p.isReady || p.hasAcknowledgedRules) ? "green.400" : "yellow.400"}>
+                  {players.filter(p => p.hasAcknowledgedRules).length} / {players.filter(p => p.isReady).length} confirmed rules
+                </Text>
+              )}
             </VStack>
           )}
           </VStack>
@@ -228,6 +254,77 @@ export function GameLobby() {
             </Box>
           )}
         </VStack>
+      )}
+
+      {/* Game Rules Modal */}
+      {rulesModal.isOpen && (
+        <>
+          {/* Backdrop */}
+          <Box
+            position="fixed"
+            top={0}
+            left={0}
+            right={0}
+            bottom={0}
+            bg="rgba(0, 0, 0, 0.7)"
+            zIndex={1000}
+          />
+
+          {/* Modal */}
+          <Box
+            position="fixed"
+            top="50%"
+            left="50%"
+            transform="translate(-50%, -50%)"
+            bg="linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)"
+            border="2px solid #8a2be2"
+            borderRadius="20px"
+            p={8}
+            minW="400px"
+            maxW="500px"
+            zIndex={1001}
+            boxShadow="0 8px 32px rgba(138, 43, 226, 0.5)"
+          >
+            {/* Header */}
+            <Text
+              fontSize="2xl"
+              fontWeight="bold"
+              color="#8a2be2"
+              textAlign="center"
+              mb={6}
+            >
+              📜 Game Rules 📜
+            </Text>
+
+            {/* Rules List */}
+            <VStack align="start" gap={3} mb={6}>
+              {rulesModal.rules.map((rule, index) => (
+                <Text key={index} color="white" fontSize="md">
+                  {rule}
+                </Text>
+              ))}
+            </VStack>
+
+            {/* Footer */}
+            <Box display="flex" justifyContent="center">
+              <Button
+                bg="linear-gradient(135deg, #8a2be2 0%, #6a1bb2 100%)"
+                color="white"
+                onClick={() => {
+                  setRulesModal({ ...rulesModal, isOpen: false });
+                  gameClient.send('acknowledge_rules');
+                }}
+                size="lg"
+                _hover={{
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 8px 30px rgba(138, 43, 226, 0.6)',
+                }}
+              >
+                Got it!
+              </Button>
+            </Box>
+          </Box>
+        </>
       )}
     </Box>
   );

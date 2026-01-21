@@ -20,7 +20,6 @@ export interface ICharacterData {
   defense: number;
   hp: number;
   speed: number;
-  imageUrl?: string;
   abilities: ICharacterAbility[];
 }
 
@@ -31,7 +30,7 @@ export class CharacterRepository {
    */
   async getAllCharacters(): Promise<ICharacterData[]> {
     const charactersResult = await query(
-      `SELECT id, name, emoji, cost, rarity, attack, defense, hp, speed, image_url as "imageUrl"
+      `SELECT id, name, emoji, cost, rarity, attack, defense, hp, speed
        FROM characters
        WHERE is_active = true
        ORDER BY cost, name`
@@ -62,7 +61,7 @@ export class CharacterRepository {
    */
   async getCharacterById(id: string): Promise<ICharacterData | null> {
     const charResult = await query(
-      `SELECT id, name, emoji, cost, rarity, attack, defense, hp, speed, image_url as "imageUrl"
+      `SELECT id, name, emoji, cost, rarity, attack, defense, hp, speed
        FROM characters
        WHERE id = $1 AND is_active = true`,
       [id]

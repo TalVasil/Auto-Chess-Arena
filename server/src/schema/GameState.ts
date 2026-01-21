@@ -66,6 +66,7 @@ export class Player extends Schema {
   @type('number') xp: number = 0;
   @type('number') level: number = 1;
   @type('boolean') isReady: boolean = false;
+  @type('boolean') hasAcknowledgedRules: boolean = false; // Player has read and accepted game rules
   @type('boolean') isEliminated: boolean = false;
   @type([Character]) bench = new ArraySchema<Character>();
   @type(['string']) shopCharacterIds = new ArraySchema<string>();

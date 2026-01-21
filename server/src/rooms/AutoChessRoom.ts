@@ -18,6 +18,7 @@ export class AutoChessRoom extends Room<GameState> {
   private mockCombatInterval: NodeJS.Timeout | null = null; // Store interval to clear it later
   private targetLocks: Map<string, string> = new Map(); // Track which character is targeting which (attackerPos → targetPos)
   private characterNextAttackTime: Map<string, number> = new Map(); // characterKey → next attack timestamp
+  private targetSetCounter: number = 0; // DEBUG: Counter for tracking targetRow changes
 
   onCreate(options: any) {
     console.log('AutoChessRoom created!', options);
@@ -90,9 +91,9 @@ export class AutoChessRoom extends Room<GameState> {
         return;
       }
 
-      // Only allow buying during PREPARATION phase
-      if (this.state.phase !== 'PREPARATION') {
-        client.send('error', { message: 'Can only buy characters during preparation phase' });
+      // Block eliminated players
+      if (player.isEliminated) {
+        client.send('error', { message: 'You have been eliminated' });
         return;
       }
 
@@ -153,6 +154,12 @@ export class AutoChessRoom extends Room<GameState> {
         return;
       }
 
+      // Block eliminated players
+      if (player.isEliminated) {
+        client.send('error', { message: 'You have been eliminated' });
+        return;
+      }
+
       const XP_COST = 4;
       const XP_GAIN = 4;
 
@@ -178,6 +185,12 @@ export class AutoChessRoom extends Room<GameState> {
 
       if (!player) {
         console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      // Block eliminated players
+      if (player.isEliminated) {
+        client.send('error', { message: 'You have been eliminated' });
         return;
       }
 
@@ -209,13 +222,52 @@ export class AutoChessRoom extends Room<GameState> {
 
       // Toggle ready status
       player.isReady = !player.isReady;
+
+      // Reset acknowledgement if un-readying
+      if (!player.isReady) {
+        player.hasAcknowledgedRules = false;
+      }
+
       console.log(`${player.isReady ? '✅' : '⏸️'} Player ${player.username} is ${player.isReady ? 'ready' : 'not ready'}`);
 
-      // Check if all players are ready
-      const allReady = this.checkAllPlayersReady();
+      // Send game rules to this player when they click ready
+      if (player.isReady) {
+        client.send('game_rules', {
+          rules: [
+            '🛒 Buy characters from the shop using gold',
+            '📦 Drag characters from bench to arena',
+            '⭐ Unit limit on arena = your level',
+            '⚔️ Combat is automatic - units fight on their own',
+            '💔 Damage to player = surviving enemy units × round number',
+            '🏆 Last player standing wins!',
+            '💰 Earn 5 gold + 1 gold per win each round',
+            '📈 Gain 2 XP per round, level up for more unit slots',
+            '🔄 Reroll shop for 2 gold, buy XP for 4 gold'
+          ]
+        });
+        console.log(`📜 Sent game rules to ${player.username}`);
+      }
 
-      if (allReady && this.state.players.size >= 1) { // Minimum 1 player for testing (change to 8 for production)
-        console.log('🎮 All players ready! Starting game...');
+      // Don't check for game start here - wait for acknowledge_rules
+    });
+
+    // Player acknowledges they've read the rules
+    this.onMessage('acknowledge_rules', (client) => {
+      const player = this.state.players.get(client.sessionId);
+
+      if (!player) {
+        console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      player.hasAcknowledgedRules = true;
+      console.log(`📖 Player ${player.username} acknowledged game rules`);
+
+      // Check if all players are ready AND have acknowledged rules
+      const allReadyAndAcknowledged = this.checkAllPlayersReadyAndAcknowledged();
+
+      if (allReadyAndAcknowledged && this.state.players.size >= 1) { // Minimum 1 player for testing
+        console.log('🎮 All players ready and acknowledged rules! Starting game...');
         this.startGame();
       }
     });
@@ -242,6 +294,12 @@ export class AutoChessRoom extends Room<GameState> {
 
       if (!player) {
         console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      // Block eliminated players
+      if (player.isEliminated) {
+        client.send('error', { message: 'You have been eliminated' });
         return;
       }
 
@@ -287,9 +345,9 @@ export class AutoChessRoom extends Room<GameState> {
         return;
       }
 
-      // Only allow rerolling during PREPARATION phase
-      if (this.state.phase !== 'PREPARATION') {
-        client.send('error', { message: 'Can only reroll shop during preparation phase' });
+      // Block eliminated players
+      if (player.isEliminated) {
+        client.send('error', { message: 'You have been eliminated' });
         return;
       }
 
@@ -318,6 +376,12 @@ export class AutoChessRoom extends Room<GameState> {
 
       if (!player) {
         console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      // Block eliminated players
+      if (player.isEliminated) {
+        client.send('error', { message: 'You have been eliminated' });
         return;
       }
 
@@ -362,6 +426,13 @@ export class AutoChessRoom extends Room<GameState> {
         return;
       }
 
+      // Check unit limit (max units on board = player level)
+      if (player.board.length >= player.level) {
+        console.log(`⚠️ Player ${player.username} at unit limit (${player.board.length}/${player.level})`);
+        client.send('error', { message: `Unit limit reached! Level ${player.level} = max ${player.level} units` });
+        return;
+      }
+
       // Add character to board
       const boardPos = new BoardPosition();
       boardPos.row = row;
@@ -385,6 +456,12 @@ export class AutoChessRoom extends Room<GameState> {
 
       if (!player) {
         console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      // Block eliminated players
+      if (player.isEliminated) {
+        client.send('error', { message: 'You have been eliminated' });
         return;
       }
 
@@ -425,6 +502,12 @@ export class AutoChessRoom extends Room<GameState> {
 
       if (!player) {
         console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      // Block eliminated players
+      if (player.isEliminated) {
+        client.send('error', { message: 'You have been eliminated' });
         return;
       }
 
@@ -481,6 +564,12 @@ export class AutoChessRoom extends Room<GameState> {
         return;
       }
 
+      // Block eliminated players
+      if (player.isEliminated) {
+        client.send('error', { message: 'You have been eliminated' });
+        return;
+      }
+
       // Only allow movement during PREPARATION phase
       if (this.state.phase !== 'PREPARATION') {
         console.log(`⚠️ Player ${player.username} tried to move character during ${this.state.phase} phase`);
@@ -529,6 +618,106 @@ export class AutoChessRoom extends Room<GameState> {
       console.log(`✅ Player ${player.username} moved ${sourcePos.character.name} from (${fromRow}, ${fromCol}) to (${toRow}, ${toCol})`);
     });
 
+    // Swap two arena characters
+    this.onMessage('swap_arena', (client, message: { fromRow: number, fromCol: number, toRow: number, toCol: number }) => {
+      const player = this.state.players.get(client.sessionId);
+
+      if (!player) {
+        console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      if (player.isEliminated) {
+        client.send('error', { message: 'You have been eliminated' });
+        return;
+      }
+
+      if (this.state.phase !== 'PREPARATION') {
+        client.send('error', { message: 'Can only swap during preparation phase' });
+        return;
+      }
+
+      const { fromRow, fromCol, toRow, toCol } = message;
+
+      // Find both characters
+      const sourcePos = player.board.find(pos => pos.row === fromRow && pos.col === fromCol);
+      const targetPos = player.board.find(pos => pos.row === toRow && pos.col === toCol);
+
+      if (!sourcePos?.character || !targetPos?.character) {
+        console.log(`⚠️ Missing character for swap`);
+        return;
+      }
+
+      // Swap positions
+      const tempRow = sourcePos.row;
+      const tempCol = sourcePos.col;
+      sourcePos.row = targetPos.row;
+      sourcePos.col = targetPos.col;
+      targetPos.row = tempRow;
+      targetPos.col = tempCol;
+
+      console.log(`✅ Player ${player.username} swapped ${sourcePos.character.name} ↔️ ${targetPos.character.name}`);
+    });
+
+    // Swap bench character with arena character
+    this.onMessage('swap_bench_arena', (client, message: { benchIndex: number, row: number, col: number }) => {
+      const player = this.state.players.get(client.sessionId);
+
+      if (!player) {
+        console.error(`❌ Player ${client.sessionId} not found`);
+        return;
+      }
+
+      if (player.isEliminated) {
+        client.send('error', { message: 'You have been eliminated' });
+        return;
+      }
+
+      if (this.state.phase !== 'PREPARATION') {
+        client.send('error', { message: 'Can only swap during preparation phase' });
+        return;
+      }
+
+      const { benchIndex, row, col } = message;
+
+      // Validate bench index
+      if (benchIndex < 0 || benchIndex >= player.bench.length) {
+        console.log(`⚠️ Invalid bench index: ${benchIndex}`);
+        return;
+      }
+
+      const benchChar = player.bench[benchIndex];
+      if (!benchChar) {
+        console.log(`⚠️ No character at bench index ${benchIndex}`);
+        return;
+      }
+
+      // Find arena character
+      const arenaPosIndex = player.board.findIndex(pos => pos.row === row && pos.col === col);
+      if (arenaPosIndex === -1) {
+        console.log(`⚠️ No character at arena position (${row}, ${col})`);
+        return;
+      }
+
+      const arenaPos = player.board[arenaPosIndex];
+      if (!arenaPos.character) {
+        console.log(`⚠️ No character at arena position (${row}, ${col})`);
+        return;
+      }
+
+      // Swap: arena char goes to bench, bench char goes to arena
+      const arenaChar = arenaPos.character;
+
+      // Put bench char on arena
+      arenaPos.character = benchChar;
+      arenaPos.character.currentHP = arenaPos.character.hp; // Reset HP
+
+      // Put arena char on bench
+      player.bench[benchIndex] = arenaChar;
+
+      console.log(`✅ Player ${player.username} swapped bench[${benchIndex}] ${benchChar.name} ↔️ arena(${row},${col}) ${arenaChar.name}`);
+    });
+
     // Debug: Toggle timer pause/resume
     this.onMessage('debug_toggle_timer', (client) => {
       this.timerPaused = !this.timerPaused;
@@ -555,6 +744,9 @@ export class AutoChessRoom extends Room<GameState> {
             if (pos.character) {
               pos.character.targetRow = -1;
               pos.character.targetCol = -1;
+              // Force Colyseus to detect nested property change
+              pos.setDirty('character');
+              console.log(`🔢 ${this.targetSetCounter++}: [PREP_START] ${pos.character.emoji} targetRow=-1 (clear for new round)`);
             }
           });
         });
@@ -1192,6 +1384,20 @@ export class AutoChessRoom extends Room<GameState> {
     return allReady;
   }
 
+  // Check if all players are ready AND have acknowledged the rules
+  checkAllPlayersReadyAndAcknowledged(): boolean {
+    if (this.state.players.size === 0) return false;
+
+    let allReadyAndAcknowledged = true;
+    this.state.players.forEach((player) => {
+      if (!player.isReady || !player.hasAcknowledgedRules) {
+        allReadyAndAcknowledged = false;
+      }
+    });
+
+    return allReadyAndAcknowledged;
+  }
+
   // Start the game when all players are ready
   startGame() {
     console.log('🚀 Game starting!');
@@ -1221,6 +1427,9 @@ export class AutoChessRoom extends Room<GameState> {
    */
   autoFillArenasBeforeCombat() {
     this.state.players.forEach((player) => {
+      // Skip eliminated players
+      if (player.isEliminated) return;
+
       const currentBoardCount = player.board.length;
       const maxUnits = player.level;
       const spotsToFill = maxUnits - currentBoardCount;
@@ -1383,7 +1592,7 @@ export class AutoChessRoom extends Room<GameState> {
 
       // Note: Phase change will be automatically synced via Colyseus onStateChange
 
-      const COMBAT_DEBUG = false; // Toggle: true = detailed logs, false = summary only
+      const COMBAT_DEBUG = true; // Toggle: true = detailed logs, false = summary only
 
       // Helper function: Calculate distance between two positions (Manhattan distance)
       const getDistance = (pos1: {row: number, col: number}, pos2: {row: number, col: number}): number => {
@@ -1411,6 +1620,8 @@ export class AutoChessRoom extends Room<GameState> {
 
       // Track which matchups have been forfeited (to prevent infinite loop on disconnect)
       const processedForfeits = new Set<string>();
+      // Track which matchups have completed (to allow other matchups to continue)
+      const completedMatchups = new Set<string>();
 
       // Combat tick runs every 50ms to check for attacks
       this.mockCombatInterval = setInterval(() => {
@@ -1420,28 +1631,24 @@ export class AutoChessRoom extends Room<GameState> {
 
         // Process each matchup
         matchups.forEach((matchup) => {
+          const matchupKey = `${matchup.player1Id}-${matchup.player2Id}`;
+
+          // Skip already completed matchups
+          if (completedMatchups.has(matchupKey) || processedForfeits.has(matchupKey)) {
+            return;
+          }
+
           const player1 = this.state.players.get(matchup.player1Id);
           const player2 = this.state.players.get(matchup.player2Id);
 
-          // Handle disconnected player - award win to connected player (ONCE per matchup)
+          // Handle disconnected player - award win to connected player
           if (!player1 || !player2) {
-            const matchupKey = `${matchup.player1Id}-${matchup.player2Id}`;
-
-            // Skip if already processed this forfeit
-            if (processedForfeits.has(matchupKey)) {
-              return;
-            }
-
             const connectedPlayer = player1 || player2;
-            const disconnectedPlayerId = !player1 ? matchup.player1Id : matchup.player2Id;
 
             if (connectedPlayer) {
-              // Award +1 gold to connected player (only once!)
               connectedPlayer.gold += 1;
-
               console.log(`🏆 ${connectedPlayer.username} wins by forfeit (opponent disconnected) (+1 gold → ${connectedPlayer.gold})`);
 
-              // Send victory message (only once!)
               const connectedClient = Array.from(this.clients).find(
                 (c) => c.sessionId === (player1 ? matchup.player1Id : matchup.player2Id)
               );
@@ -1452,12 +1659,18 @@ export class AutoChessRoom extends Room<GameState> {
                   opponentName: 'Disconnected Player'
                 });
               }
-
-              // Mark this matchup as processed
-              processedForfeits.add(matchupKey);
             }
 
-            return; // Skip combat for this matchup
+            // Mark as forfeit and check if all matchups done
+            processedForfeits.add(matchupKey);
+            if (completedMatchups.size + processedForfeits.size >= matchups.length) {
+              if (this.mockCombatInterval) {
+                clearInterval(this.mockCombatInterval);
+                this.mockCombatInterval = null;
+                console.log('✅ All matchups complete - combat interval cleared');
+              }
+            }
+            return;
           }
 
           // Get alive characters from both teams
@@ -1516,11 +1729,22 @@ export class AutoChessRoom extends Room<GameState> {
                 (c) => c.sessionId === (player1Won ? matchup.player2Id : matchup.player1Id)
               );
               if (loserClient) {
-                loserClient.send('combat_defeat', {
-                  message: `You lost to ${winner.username}!`,
-                  damageTaken: damageToPlayer,
-                  opponentName: winner.username
-                });
+                // Check if loser is eliminated (HP reached 0)
+                if (loser.hp <= 0 && !loser.isEliminated) {
+                  loser.isEliminated = true;
+                  loserClient.send('game_over', {
+                    message: 'You have been eliminated!',
+                    finalHP: 0,
+                    roundNumber: this.state.roundNumber
+                  });
+                  console.log(`💀 ${loser.username} has been eliminated (HP: 0)`);
+                } else {
+                  loserClient.send('combat_defeat', {
+                    message: `You lost to ${winner.username}!`,
+                    damageTaken: damageToPlayer,
+                    opponentName: winner.username
+                  });
+                }
               }
             } else if (!winner && !loser) {
               // Draw case: Both teams eliminated simultaneously
@@ -1530,7 +1754,7 @@ export class AutoChessRoom extends Room<GameState> {
 
               console.log(`🤝 DRAW: ${player1.username} (HP: ${player1.hp}) and ${player2.username} (HP: ${player2.hp}) both lost ${drawDamage} HP`);
 
-              // Send draw message to both players
+              // Send draw or elimination message to both players
               const player1Client = Array.from(this.clients).find(
                 (c) => c.sessionId === matchup.player1Id
               );
@@ -1539,39 +1763,66 @@ export class AutoChessRoom extends Room<GameState> {
               );
 
               if (player1Client) {
-                player1Client.send('combat_draw', {
-                  message: 'You both lose 2 HP',
-                  damageTaken: drawDamage,
-                  opponentName: player2.username
-                });
+                if (player1.hp <= 0 && !player1.isEliminated) {
+                  player1.isEliminated = true;
+                  player1Client.send('game_over', {
+                    message: 'You have been eliminated!',
+                    finalHP: 0,
+                    roundNumber: this.state.roundNumber
+                  });
+                  console.log(`💀 ${player1.username} has been eliminated (HP: 0)`);
+                } else {
+                  player1Client.send('combat_draw', {
+                    message: 'You both lose 2 HP',
+                    damageTaken: drawDamage,
+                    opponentName: player2.username
+                  });
+                }
               }
 
               if (player2Client) {
-                player2Client.send('combat_draw', {
-                  message: 'You both lose 2 HP',
-                  damageTaken: drawDamage,
-                  opponentName: player1.username
-                });
+                if (player2.hp <= 0 && !player2.isEliminated) {
+                  player2.isEliminated = true;
+                  player2Client.send('game_over', {
+                    message: 'You have been eliminated!',
+                    finalHP: 0,
+                    roundNumber: this.state.roundNumber
+                  });
+                  console.log(`💀 ${player2.username} has been eliminated (HP: 0)`);
+                } else {
+                  player2Client.send('combat_draw', {
+                    message: 'You both lose 2 HP',
+                    damageTaken: drawDamage,
+                    opponentName: player1.username
+                  });
+                }
               }
             }
 
-            // Clear targets for all characters
+            // Clear targets for all characters (modify in place to preserve Colyseus sync)
             const allChars = [...team1Chars, ...team2Chars];
             allChars.forEach((char) => {
               if (char.pos.character) {
-                const clearedChar = new Character();
-                Object.assign(clearedChar, char.pos.character);
-                clearedChar.targetRow = -1;
-                clearedChar.targetCol = -1;
-                char.pos.character = clearedChar;
+                char.pos.character.targetRow = -1;
+                char.pos.character.targetCol = -1;
+                // Force Colyseus to detect nested property change
+                char.pos.setDirty('character');
+                console.log(`🔢 ${this.targetSetCounter++}: [TIMER_EXPIRED] ${char.pos.character.emoji} targetRow=-1 (matchup timer done)`);
               }
             });
 
-            // Clear combat interval to end combat
-            if (this.mockCombatInterval) {
-              clearInterval(this.mockCombatInterval);
-              this.mockCombatInterval = null;
-              console.log('✅ Combat interval cleared - will transition to next phase');
+            // Mark this matchup as completed
+            const matchupKey = `${matchup.player1Id}-${matchup.player2Id}`;
+            completedMatchups.add(matchupKey);
+            console.log(`✅ Matchup completed (${completedMatchups.size}/${matchups.length})`);
+
+            // Check if ALL matchups are done - only then clear the interval
+            if (completedMatchups.size + processedForfeits.size >= matchups.length) {
+              if (this.mockCombatInterval) {
+                clearInterval(this.mockCombatInterval);
+                this.mockCombatInterval = null;
+                console.log('✅ All matchups complete - combat interval cleared');
+              }
             }
 
             return; // Exit this matchup processing
@@ -1615,13 +1866,16 @@ export class AutoChessRoom extends Room<GameState> {
                   // Set target in schema (locked target still needs to sync to client!)
                   attackerChar.targetRow = nearestEnemy.boardPos.row;
                   attackerChar.targetCol = nearestEnemy.boardPos.col;
+                  // Force Colyseus to detect nested property change
+                  attacker.pos.setDirty('character');
+                  console.log(`🔢 ${this.targetSetCounter++}: [TEAM1_LOCKED] ${attackerChar.emoji} targetRow=${attackerChar.targetRow}`);
                 } else {
                   // Locked target died, clear the lock
                   this.targetLocks.delete(attackerKey);
                 }
               }
 
-              // If no locked target, find nearest enemy
+              // If no locked target, find nearest enemy (TEAM1)
               if (!nearestEnemy) {
                 team2Chars.forEach((enemy) => {
                   // Mirror enemy position for distance calculation (enemy is on opposite side)
@@ -1652,9 +1906,15 @@ export class AutoChessRoom extends Room<GameState> {
                   // Set target in schema (DIRECTLY modify existing object for Colyseus sync)
                   attackerChar.targetRow = nearestEnemy.boardPos.row;
                   attackerChar.targetCol = nearestEnemy.boardPos.col;
+                  // Force Colyseus to detect nested property change
+                  attacker.pos.setDirty('character');
+                  console.log(`🔢 ${this.targetSetCounter++}: [TEAM1_NEW] ${attackerChar.emoji} targetRow=${attackerChar.targetRow}`);
 
                   if (COMBAT_DEBUG) {
                     console.log(`🎯 LOCK ${attackerChar.emoji} at [${attacker.boardPos.row},${attacker.boardPos.col}] → target [${attackerChar.targetRow},${attackerChar.targetCol}]`);
+                    // Verify the target is actually set on the schema object in player's board
+                    const verifyPos = player1.board.find((p: any) => p.row === attacker.boardPos.row && p.col === attacker.boardPos.col);
+                    console.log(`   📋 VERIFY: player1.board char targetRow=${verifyPos?.character?.targetRow}, same object? ${verifyPos?.character === attackerChar}`);
                   }
                 }
               }
@@ -1665,11 +1925,8 @@ export class AutoChessRoom extends Room<GameState> {
                 const damage = Math.max(1, attackerChar.attack - targetChar.defense);
                 const oldHP = targetChar.currentHP;
 
-                // Clone and update HP (Colyseus sync requirement)
-                const updatedTarget = new Character();
-                Object.assign(updatedTarget, targetChar);
-                updatedTarget.currentHP = Math.max(0, targetChar.currentHP - damage);
-                nearestEnemy.pos.character = updatedTarget;
+                // Update HP directly on existing Character (preserves Colyseus change tracking)
+                targetChar.currentHP = Math.max(0, targetChar.currentHP - damage);
 
                 // Track stats (always)
                 combatStats.totalAttacks++;
@@ -1678,7 +1935,7 @@ export class AutoChessRoom extends Room<GameState> {
                 combatStats.team1Damage += damage;
 
                 if (COMBAT_DEBUG) {
-                  console.log(`⚔️ ${attackerChar.name} [${attacker.boardPos.row},${attacker.boardPos.col}] → ${updatedTarget.name} [${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}] : (${minDistance}) dealt ${damage} dmg (HP: ${oldHP} → ${updatedTarget.currentHP})`);
+                  console.log(`⚔️ ${attackerChar.name} [${attacker.boardPos.row},${attacker.boardPos.col}] → ${targetChar.name} [${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}] : (${minDistance}) dealt ${damage} dmg (HP: ${oldHP} → ${targetChar.currentHP})`);
                 }
               }
             });
@@ -1718,13 +1975,16 @@ export class AutoChessRoom extends Room<GameState> {
                   // Set target in schema (locked target still needs to sync to client!)
                   attackerChar.targetRow = nearestEnemy.boardPos.row;
                   attackerChar.targetCol = nearestEnemy.boardPos.col;
+                  // Force Colyseus to detect nested property change
+                  attacker.pos.setDirty('character');
+                  console.log(`🔢 ${this.targetSetCounter++}: [TEAM2_LOCKED] ${attackerChar.emoji} targetRow=${attackerChar.targetRow}`);
                 } else {
                   // Locked target died, clear the lock
                   this.targetLocks.delete(attackerKey);
                 }
               }
 
-              // If no locked target, find nearest enemy
+              // If no locked target, find nearest enemy (TEAM2)
               if (!nearestEnemy) {
                 team1Chars.forEach((enemy) => {
                   // Mirror enemy position for distance calculation (enemy is on opposite side)
@@ -1755,6 +2015,9 @@ export class AutoChessRoom extends Room<GameState> {
                   // Set target in schema (DIRECTLY modify existing object for Colyseus sync)
                   attackerChar.targetRow = nearestEnemy.boardPos.row;
                   attackerChar.targetCol = nearestEnemy.boardPos.col;
+                  // Force Colyseus to detect nested property change
+                  attacker.pos.setDirty('character');
+                  console.log(`🔢 ${this.targetSetCounter++}: [TEAM2_NEW] ${attackerChar.emoji} targetRow=${attackerChar.targetRow}`);
 
                   if (COMBAT_DEBUG) {
                     console.log(`🎯 LOCK ${attackerChar.emoji} at [${attacker.boardPos.row},${attacker.boardPos.col}] → target [${attackerChar.targetRow},${attackerChar.targetCol}]`);
@@ -1768,11 +2031,8 @@ export class AutoChessRoom extends Room<GameState> {
                 const damage = Math.max(1, attackerChar.attack - targetChar.defense);
                 const oldHP = targetChar.currentHP;
 
-                // Clone and update HP (Colyseus sync requirement)
-                const updatedTarget = new Character();
-                Object.assign(updatedTarget, targetChar);
-                updatedTarget.currentHP = Math.max(0, targetChar.currentHP - damage);
-                nearestEnemy.pos.character = updatedTarget;
+                // Update HP directly on existing Character (preserves Colyseus change tracking)
+                targetChar.currentHP = Math.max(0, targetChar.currentHP - damage);
 
                 // Track stats (always)
                 combatStats.totalAttacks++;
@@ -1781,20 +2041,20 @@ export class AutoChessRoom extends Room<GameState> {
                 combatStats.team2Damage += damage;
 
                 if (COMBAT_DEBUG) {
-                  console.log(`⚔️ ${attackerChar.name} [${attacker.boardPos.row},${attacker.boardPos.col}] → ${updatedTarget.name} [${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}] : (${minDistance}) dealt ${damage} dmg (HP: ${oldHP} → ${updatedTarget.currentHP})`);
+                  console.log(`⚔️ ${attackerChar.name} [${attacker.boardPos.row},${attacker.boardPos.col}] → ${targetChar.name} [${nearestEnemy.boardPos.row},${nearestEnemy.boardPos.col}] : (${minDistance}) dealt ${damage} dmg (HP: ${oldHP} → ${targetChar.currentHP})`);
                 }
               }
             });
           } else {
-            // One team eliminated - clear targets for surviving characters
+            // One team eliminated - clear targets for surviving characters (modify in place to preserve Colyseus sync)
             const allChars = [...team1Chars, ...team2Chars];
             allChars.forEach((char) => {
               if (char.pos.character) {
-                const clearedChar = new Character();
-                Object.assign(clearedChar, char.pos.character);
-                clearedChar.targetRow = -1;
-                clearedChar.targetCol = -1;
-                char.pos.character = clearedChar;
+                char.pos.character.targetRow = -1;
+                char.pos.character.targetCol = -1;
+                // Force Colyseus to detect nested property change
+                char.pos.setDirty('character');
+                console.log(`🔢 ${this.targetSetCounter++}: [TEAM_ELIMINATED] ${char.pos.character.emoji} targetRow=-1`);
               }
             });
           }
@@ -1814,19 +2074,22 @@ export class AutoChessRoom extends Room<GameState> {
       this.targetLocks.clear();
       this.characterNextAttackTime.clear();
 
-      // Reset all characters to full HP (they're still on board, just at 0 HP)
+      // Reset all characters to full HP (only for alive players)
       this.state.players.forEach((player) => {
+        // Skip already eliminated players
+        if (player.isEliminated) return;
+
         let restoredCount = 0;
 
         player.board.forEach((pos) => {
           if (pos?.character) {
-            // Clone and reset HP
-            const restoredChar = new Character();
-            Object.assign(restoredChar, pos.character);
-            restoredChar.currentHP = restoredChar.hp; // Reset to max HP
-            restoredChar.targetRow = -1; // Clear target from previous combat
-            restoredChar.targetCol = -1; // Clear target from previous combat
-            pos.character = restoredChar;
+            // Restore HP directly on existing Character (preserves Colyseus sync)
+            pos.character.currentHP = pos.character.hp; // Reset to max HP
+            pos.character.targetRow = -1; // Clear target from previous combat
+            pos.character.targetCol = -1; // Clear target from previous combat
+            // Force Colyseus to detect nested property change
+            pos.setDirty('character');
+            console.log(`🔢 ${this.targetSetCounter++}: [HP_RESTORE] ${pos.character.emoji} targetRow=-1 (after combat)`);
             restoredCount++;
           }
         });
@@ -1836,8 +2099,11 @@ export class AutoChessRoom extends Room<GameState> {
         }
       });
 
-      // Check for eliminated players (HP <= 0) and send game over message
+      // Check for newly eliminated players (HP <= 0) and send game over message
       this.state.players.forEach((player) => {
+        // Skip if already marked as eliminated
+        if (player.isEliminated) return;
+
         if (player.hp <= 0) {
           const eliminatedClient = Array.from(this.clients).find(
             (c) => c.sessionId === player.id
@@ -1849,13 +2115,15 @@ export class AutoChessRoom extends Room<GameState> {
               finalHP: 0,
               roundNumber: this.state.roundNumber
             });
-            console.log(`💀 ${player.username} has been eliminated (HP: 0)`);
           }
+          // Mark player as eliminated so they're excluded from future rounds
+          player.isEliminated = true;
+          console.log(`💀 ${player.username} has been eliminated (HP: 0)`);
         }
       });
 
-      // Check for game winner (only one player with HP > 0)
-      const alivePlayers = Array.from(this.state.players.values()).filter(p => p.hp > 0);
+      // Check for game winner (only one non-eliminated player remaining)
+      const alivePlayers = Array.from(this.state.players.values()).filter(p => p.hp > 0 && !p.isEliminated);
       if (alivePlayers.length === 1) {
         const winner = alivePlayers[0];
         const winnerClient = Array.from(this.clients).find(
@@ -1883,8 +2151,11 @@ export class AutoChessRoom extends Room<GameState> {
       console.log(`🔄 Round ${this.state.roundNumber} - PREPARATION phase`);
       // Note: Phase change will be automatically synced via Colyseus onStateChange
 
-      // Award XP and handle level-ups, give income and regenerate shops
+      // Award XP and handle level-ups, give income and regenerate shops (only for alive players)
       this.state.players.forEach((player) => {
+        // Skip eliminated players
+        if (player.isEliminated) return;
+
         // Award 2 XP per round
         const XP_PER_ROUND = 2;
         player.xp += XP_PER_ROUND;

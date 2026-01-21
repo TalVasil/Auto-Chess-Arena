@@ -30,7 +30,6 @@ export interface ICharacter {
   hp: number;
   speed: number;
   abilities: IAbility[];
-  imageUrl: string;
 }
 
 export enum CharacterRarity {

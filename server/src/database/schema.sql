@@ -20,7 +20,6 @@ CREATE TABLE IF NOT EXISTS characters (
   defense INTEGER NOT NULL CHECK (defense >= 0),
   hp INTEGER NOT NULL CHECK (hp > 0),
   speed INTEGER NOT NULL CHECK (speed > 0),
-  image_url VARCHAR(255),               -- Path to character image
   is_active BOOLEAN DEFAULT true,       -- Enable/disable in shop pool
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
@@ -115,17 +114,17 @@ $$ LANGUAGE plpgsql;
 -- =====================================================
 
 -- Insert characters (only if table is empty)
-INSERT INTO characters (id, name, emoji, cost, rarity, attack, defense, hp, speed, image_url)
+INSERT INTO characters (id, name, emoji, cost, rarity, attack, defense, hp, speed)
 SELECT * FROM (VALUES
-  ('warrior_1', 'Knight', '🛡️', 1, 'COMMON', 50, 40, 500, 80, '/assets/characters/knight.png'),
-  ('archer_1', 'Archer', '🏹', 1, 'COMMON', 60, 20, 400, 120, '/assets/characters/archer.png'),
-  ('mage_1', 'Mage', '🔮', 2, 'UNCOMMON', 70, 15, 350, 90, '/assets/characters/mage.png'),
-  ('tank_1', 'Paladin', '⚔️', 2, 'UNCOMMON', 40, 60, 700, 70, '/assets/characters/paladin.png'),
-  ('assassin_1', 'Assassin', '🗡️', 3, 'RARE', 90, 25, 450, 150, '/assets/characters/assassin.png'),
-  ('healer_1', 'Cleric', '✨', 3, 'RARE', 30, 35, 500, 100, '/assets/characters/cleric.png'),
-  ('dragon_knight', 'Dragon Knight', '🐉', 4, 'EPIC', 100, 50, 800, 85, '/assets/characters/dragon_knight.png'),
-  ('archmage', 'Archmage', '🧙', 5, 'LEGENDARY', 120, 30, 600, 95, '/assets/characters/archmage.png')
-) AS v(id, name, emoji, cost, rarity, attack, defense, hp, speed, image_url)
+  ('warrior_1', 'Knight', '🛡️', 1, 'COMMON', 50, 40, 500, 80),
+  ('archer_1', 'Archer', '🏹', 1, 'COMMON', 60, 20, 400, 120),
+  ('mage_1', 'Mage', '🔮', 2, 'UNCOMMON', 70, 15, 350, 90),
+  ('tank_1', 'Paladin', '⚔️', 2, 'UNCOMMON', 40, 60, 700, 70),
+  ('assassin_1', 'Assassin', '🗡️', 3, 'RARE', 90, 25, 450, 150),
+  ('healer_1', 'Cleric', '✨', 3, 'RARE', 30, 35, 500, 100),
+  ('dragon_knight', 'Dragon Knight', '🐉', 4, 'EPIC', 100, 50, 800, 85),
+  ('archmage', 'Archmage', '🧙', 5, 'LEGENDARY', 120, 30, 600, 95)
+) AS v(id, name, emoji, cost, rarity, attack, defense, hp, speed)
 WHERE NOT EXISTS (SELECT 1 FROM characters LIMIT 1);
 
 -- Insert character abilities (only if table is empty)
