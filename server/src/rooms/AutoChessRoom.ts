@@ -18,7 +18,6 @@ export class AutoChessRoom extends Room<GameState> {
   private mockCombatInterval: NodeJS.Timeout | null = null; // Store interval to clear it later
   private targetLocks: Map<string, string> = new Map(); // Track which character is targeting which (attackerPos → targetPos)
   private characterNextAttackTime: Map<string, number> = new Map(); // characterKey → next attack timestamp
-  private targetSetCounter: number = 0; // DEBUG: Counter for tracking targetRow changes
 
   onCreate(options: any) {
     console.log('AutoChessRoom created!', options);
@@ -746,7 +745,6 @@ export class AutoChessRoom extends Room<GameState> {
               pos.character.targetCol = -1;
               // Force Colyseus to detect nested property change
               pos.setDirty('character');
-              console.log(`🔢 ${this.targetSetCounter++}: [PREP_START] ${pos.character.emoji} targetRow=-1 (clear for new round)`);
             }
           });
         });
@@ -1592,7 +1590,7 @@ export class AutoChessRoom extends Room<GameState> {
 
       // Note: Phase change will be automatically synced via Colyseus onStateChange
 
-      const COMBAT_DEBUG = true; // Toggle: true = detailed logs, false = summary only
+      const COMBAT_DEBUG = false; // Toggle: true = detailed logs, false = summary only
 
       // Helper function: Calculate distance between two positions (Manhattan distance)
       const getDistance = (pos1: {row: number, col: number}, pos2: {row: number, col: number}): number => {
@@ -1807,7 +1805,6 @@ export class AutoChessRoom extends Room<GameState> {
                 char.pos.character.targetCol = -1;
                 // Force Colyseus to detect nested property change
                 char.pos.setDirty('character');
-                console.log(`🔢 ${this.targetSetCounter++}: [TIMER_EXPIRED] ${char.pos.character.emoji} targetRow=-1 (matchup timer done)`);
               }
             });
 
@@ -1868,7 +1865,6 @@ export class AutoChessRoom extends Room<GameState> {
                   attackerChar.targetCol = nearestEnemy.boardPos.col;
                   // Force Colyseus to detect nested property change
                   attacker.pos.setDirty('character');
-                  console.log(`🔢 ${this.targetSetCounter++}: [TEAM1_LOCKED] ${attackerChar.emoji} targetRow=${attackerChar.targetRow}`);
                 } else {
                   // Locked target died, clear the lock
                   this.targetLocks.delete(attackerKey);
@@ -1908,13 +1904,9 @@ export class AutoChessRoom extends Room<GameState> {
                   attackerChar.targetCol = nearestEnemy.boardPos.col;
                   // Force Colyseus to detect nested property change
                   attacker.pos.setDirty('character');
-                  console.log(`🔢 ${this.targetSetCounter++}: [TEAM1_NEW] ${attackerChar.emoji} targetRow=${attackerChar.targetRow}`);
 
                   if (COMBAT_DEBUG) {
                     console.log(`🎯 LOCK ${attackerChar.emoji} at [${attacker.boardPos.row},${attacker.boardPos.col}] → target [${attackerChar.targetRow},${attackerChar.targetCol}]`);
-                    // Verify the target is actually set on the schema object in player's board
-                    const verifyPos = player1.board.find((p: any) => p.row === attacker.boardPos.row && p.col === attacker.boardPos.col);
-                    console.log(`   📋 VERIFY: player1.board char targetRow=${verifyPos?.character?.targetRow}, same object? ${verifyPos?.character === attackerChar}`);
                   }
                 }
               }
@@ -1977,7 +1969,6 @@ export class AutoChessRoom extends Room<GameState> {
                   attackerChar.targetCol = nearestEnemy.boardPos.col;
                   // Force Colyseus to detect nested property change
                   attacker.pos.setDirty('character');
-                  console.log(`🔢 ${this.targetSetCounter++}: [TEAM2_LOCKED] ${attackerChar.emoji} targetRow=${attackerChar.targetRow}`);
                 } else {
                   // Locked target died, clear the lock
                   this.targetLocks.delete(attackerKey);
@@ -2017,7 +2008,6 @@ export class AutoChessRoom extends Room<GameState> {
                   attackerChar.targetCol = nearestEnemy.boardPos.col;
                   // Force Colyseus to detect nested property change
                   attacker.pos.setDirty('character');
-                  console.log(`🔢 ${this.targetSetCounter++}: [TEAM2_NEW] ${attackerChar.emoji} targetRow=${attackerChar.targetRow}`);
 
                   if (COMBAT_DEBUG) {
                     console.log(`🎯 LOCK ${attackerChar.emoji} at [${attacker.boardPos.row},${attacker.boardPos.col}] → target [${attackerChar.targetRow},${attackerChar.targetCol}]`);
@@ -2054,7 +2044,6 @@ export class AutoChessRoom extends Room<GameState> {
                 char.pos.character.targetCol = -1;
                 // Force Colyseus to detect nested property change
                 char.pos.setDirty('character');
-                console.log(`🔢 ${this.targetSetCounter++}: [TEAM_ELIMINATED] ${char.pos.character.emoji} targetRow=-1`);
               }
             });
           }
@@ -2089,7 +2078,6 @@ export class AutoChessRoom extends Room<GameState> {
             pos.character.targetCol = -1; // Clear target from previous combat
             // Force Colyseus to detect nested property change
             pos.setDirty('character');
-            console.log(`🔢 ${this.targetSetCounter++}: [HP_RESTORE] ${pos.character.emoji} targetRow=-1 (after combat)`);
             restoredCount++;
           }
         });
