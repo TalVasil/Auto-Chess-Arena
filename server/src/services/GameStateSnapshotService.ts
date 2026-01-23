@@ -25,7 +25,7 @@ class GameStateSnapshotService {
         const state = getState();
 
         // Skip empty rooms or rooms in waiting/lobby phase
-        if (!state || state.players.size === 0 || state.phase === 'WAITING') {
+        if (!state || state.players.size === 0 || state.phase === 'WAITING' as any) {
           return;
         }
 
@@ -61,7 +61,8 @@ class GameStateSnapshotService {
   private serializeGameState(state: GameState): string {
     // Build opponent mapping from current matchups for easier recovery
     const opponentMap = new Map<string, { opponentId: string; opponentName: string }>();
-    Array.from(state.currentMatchups).forEach((matchup) => {
+    Array.from(state.currentMatchups).filter(m => m).forEach((matchup) => {
+      if (!matchup) return;
       opponentMap.set(matchup.player1Id, {
         opponentId: matchup.player2Id,
         opponentName: matchup.player2Name,
@@ -101,11 +102,11 @@ class GameStateSnapshotService {
           currentOpponentName: opponentInfo?.opponentName || null,
         };
       }),
-      currentMatchups: Array.from(state.currentMatchups).map((matchup) => ({
-        player1Id: matchup.player1Id,
-        player2Id: matchup.player2Id,
-        player1Name: matchup.player1Name,
-        player2Name: matchup.player2Name,
+      currentMatchups: Array.from(state.currentMatchups).filter(m => m).map((matchup) => ({
+        player1Id: matchup!.player1Id,
+        player2Id: matchup!.player2Id,
+        player1Name: matchup!.player1Name,
+        player2Name: matchup!.player2Name,
       })),
     };
 

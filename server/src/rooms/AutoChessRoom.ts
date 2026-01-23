@@ -2,7 +2,7 @@ import colyseus from 'colyseus';
 const { Room } = colyseus;
 import type { Client } from 'colyseus';
 import { ArraySchema } from '@colyseus/schema';
-import { GameState, Character, BoardPosition, Player, Matchup } from '../schema/GameState.js';
+import { GameState, Character, BoardPosition, Player, Matchup, GamePhase } from '../schema/GameState.js';
 import { characterService } from '../services/CharacterService.js';
 import { AuthService } from '../services/AuthService.js';
 import { gameStateSnapshotService } from '../services/GameStateSnapshotService.js';
@@ -380,7 +380,7 @@ export class AutoChessRoom extends Room<GameState> {
       }
 
       // Only allow placement during PREPARATION phase
-      if (this.state.phase !== 'PREPARATION') {
+      if (this.state.phase !== GamePhase.PREPARATION) {
         console.log(`⚠️ Player ${player.username} tried to place character during ${this.state.phase} phase`);
         client.send('error', { message: 'You can only place characters during preparation phase' });
         return;
@@ -506,7 +506,7 @@ export class AutoChessRoom extends Room<GameState> {
       }
 
       // Only allow removal during PREPARATION phase
-      if (this.state.phase !== 'PREPARATION') {
+      if (this.state.phase !== GamePhase.PREPARATION) {
         console.log(`⚠️ Player ${player.username} tried to remove character during ${this.state.phase} phase`);
         client.send('error', { message: 'You can only move characters during preparation phase' });
         return;
@@ -565,7 +565,7 @@ export class AutoChessRoom extends Room<GameState> {
       }
 
       // Only allow movement during PREPARATION phase
-      if (this.state.phase !== 'PREPARATION') {
+      if (this.state.phase !== GamePhase.PREPARATION) {
         console.log(`⚠️ Player ${player.username} tried to move character during ${this.state.phase} phase`);
         client.send('error', { message: 'You can only move characters during preparation phase' });
         return;
@@ -626,7 +626,7 @@ export class AutoChessRoom extends Room<GameState> {
         return;
       }
 
-      if (this.state.phase !== 'PREPARATION') {
+      if (this.state.phase !== GamePhase.PREPARATION) {
         client.send('error', { message: 'Can only swap during preparation phase' });
         return;
       }
@@ -667,7 +667,7 @@ export class AutoChessRoom extends Room<GameState> {
         return;
       }
 
-      if (this.state.phase !== 'PREPARATION') {
+      if (this.state.phase !== GamePhase.PREPARATION) {
         client.send('error', { message: 'Can only swap during preparation phase' });
         return;
       }
@@ -721,14 +721,14 @@ export class AutoChessRoom extends Room<GameState> {
 
     // Debug: Toggle phase between PREPARATION and COMBAT
     this.onMessage('debug_toggle_phase', (client) => {
-      if (this.state.phase === 'PREPARATION') {
-        this.state.phase = 'COMBAT';
+      if (this.state.phase === GamePhase.PREPARATION) {
+        this.state.phase = GamePhase.COMBAT;
         this.state.timer = 30;
         this.elapsedTime = 0;
-      } else if (this.state.phase === 'COMBAT') {
+      } else if (this.state.phase === GamePhase.COMBAT) {
         // Transition to PREPARATION - increment round and give gold
         this.state.roundNumber++;
-        this.state.phase = 'PREPARATION';
+        this.state.phase = GamePhase.PREPARATION;
         this.state.timer = 30;
         this.elapsedTime = 0;
 
@@ -770,7 +770,7 @@ export class AutoChessRoom extends Room<GameState> {
       console.log(`🔧 DEBUG: Game reset by ${client.sessionId}`);
 
       // Reset to round 1 preparation
-      this.state.phase = 'PREPARATION';
+      this.state.phase = GamePhase.PREPARATION;
       this.state.roundNumber = 1;
       this.state.timer = 30;
       this.elapsedTime = 0;
@@ -816,7 +816,7 @@ export class AutoChessRoom extends Room<GameState> {
       const data = typeof snapshotData === 'string' ? JSON.parse(snapshotData) : snapshotData;
 
       // Restore basic game state
-      this.state.phase = data.phase || 'WAITING';
+      this.state.phase = data.phase || GamePhase.WAITING;
       this.state.roundNumber = data.roundNumber || 0;
       this.state.timer = data.timer || 30;
 
@@ -941,7 +941,7 @@ export class AutoChessRoom extends Room<GameState> {
       console.log(`✅ Authenticated user: ${decoded.username} (ID: ${decoded.userId})`);
 
       // Security check: If game already started, only allow returning players
-      if (this.state && this.state.phase !== 'WAITING') {
+      if (this.state && this.state.phase !== GamePhase.WAITING) {
         const isReturningPlayer = Array.from(this.state.players.values())
           .some(p => p.userId === decoded.userId);
 
@@ -1006,7 +1006,7 @@ export class AutoChessRoom extends Room<GameState> {
         console.log(`   Preserved: HP=${recoveredPlayer.hp}, Gold=${recoveredPlayer.gold}, XP=${recoveredPlayer.xp}, Bench=${recoveredPlayer.bench.length}, Board=${recoveredPlayer.board.length}`);
 
         // Send matchups if in combat
-        if (this.state.phase === 'COMBAT' && this.state.currentMatchups.length > 0) {
+        if (this.state.phase === GamePhase.COMBAT && this.state.currentMatchups.length > 0) {
           const matchups = this.state.currentMatchups.map((m) => ({
             player1Id: m.player1Id,
             player1Name: m.player1Name,
@@ -1083,14 +1083,14 @@ export class AutoChessRoom extends Room<GameState> {
       });
 
       // If game already started, need to resync game state
-      if (this.state.phase !== 'WAITING') {
+      if (this.state.phase !== GamePhase.WAITING) {
         console.log('   Reconnecting during', this.state.phase, 'phase');
         // The state sync happens automatically via Colyseus
         // Client will receive full state update on reconnection
       }
 
       // If reconnecting during COMBAT phase, send matchup info
-      if (this.state.phase === 'COMBAT' && this.state.currentMatchups.length > 0) {
+      if (this.state.phase === GamePhase.COMBAT && this.state.currentMatchups.length > 0) {
         const matchups = this.state.currentMatchups.map((m) => ({
           player1Id: m.player1Id,
           player1Name: m.player1Name,
@@ -1158,7 +1158,7 @@ export class AutoChessRoom extends Room<GameState> {
 
         // If we're in COMBAT phase with existing matchups, send updated matchups
         // This is necessary because other players' myOpponentId now points to the old session ID
-        if (this.state.phase === 'COMBAT' && this.state.currentMatchups.length > 0) {
+        if (this.state.phase === GamePhase.COMBAT && this.state.currentMatchups.length > 0) {
           const matchups = this.state.currentMatchups.map((m) => ({
             player1Id: m.player1Id,
             player1Name: m.player1Name,
@@ -1322,7 +1322,7 @@ export class AutoChessRoom extends Room<GameState> {
       player.isConnected = true;
 
       // Send combat matchups if in COMBAT phase
-      if (this.state.phase === 'COMBAT' && this.state.currentMatchups.length > 0) {
+      if (this.state.phase === GamePhase.COMBAT && this.state.currentMatchups.length > 0) {
         const matchups = this.state.currentMatchups.map((m) => ({
           player1Id: m.player1Id,
           player1Name: m.player1Name,
@@ -1352,7 +1352,7 @@ export class AutoChessRoom extends Room<GameState> {
     // Game loop - runs 20 times per second (deltaTime in milliseconds)
 
     // Only update timer during active phases (not WAITING or GAME_END) and if not paused
-    if ((this.state.phase === 'PREPARATION' || this.state.phase === 'COMBAT') && !this.timerPaused) {
+    if ((this.state.phase === GamePhase.PREPARATION || this.state.phase === GamePhase.COMBAT) && !this.timerPaused) {
       // Accumulate time passed
       this.elapsedTime += deltaTime;
 
@@ -1405,7 +1405,7 @@ export class AutoChessRoom extends Room<GameState> {
     this.unlock();
 
     // Change phase to PREPARATION
-    this.state.phase = 'PREPARATION';
+    this.state.phase = GamePhase.PREPARATION;
     this.state.roundNumber = 1;
     this.state.timer = 30;
     this.elapsedTime = 0; // Reset timer accumulator
@@ -1548,12 +1548,12 @@ export class AutoChessRoom extends Room<GameState> {
   handlePhaseTransition() {
     console.log(`⏰ Timer expired! Current phase: ${this.state.phase}`);
 
-    if (this.state.phase === 'PREPARATION') {
+    if (this.state.phase === GamePhase.PREPARATION) {
       // Auto-fill arena with bench characters up to player level
       this.autoFillArenasBeforeCombat();
 
       // Transition from PREPARATION to COMBAT
-      this.state.phase = 'COMBAT';
+      this.state.phase = GamePhase.COMBAT;
       this.state.timer = 30; // Combat phase duration (placeholder)
       this.elapsedTime = 0;
 
@@ -2050,7 +2050,7 @@ export class AutoChessRoom extends Room<GameState> {
           }
         });
       }, 50); // Check for attacks every 50ms (20 ticks/second)
-    } else if (this.state.phase === 'COMBAT') {
+    } else if (this.state.phase === GamePhase.COMBAT) {
       // Transition from COMBAT back to PREPARATION
 
       // Clear mock combat interval
@@ -2128,12 +2128,12 @@ export class AutoChessRoom extends Room<GameState> {
         }
         console.log(`👑 ${winner.username} wins the game! (HP: ${winner.hp}, Round: ${this.state.roundNumber})`);
 
-        this.state.phase = 'GAME_END';
+        this.state.phase = GamePhase.GAME_END;
         return; // Don't continue to next round
       }
 
       this.state.roundNumber++;
-      this.state.phase = 'PREPARATION';
+      this.state.phase = GamePhase.PREPARATION;
       this.state.timer = 30;
       this.elapsedTime = 0;
 

@@ -1,5 +1,4 @@
-import { ICombatResult, ICombatEvent, CombatEventType } from '../../../shared/src/types/game.types';
-import { Character } from '../schema/GameState';
+import { ICombatResult } from 'auto-chess-arena-shared';
 
 /**
  * Combat Unit - Runtime state during combat simulation

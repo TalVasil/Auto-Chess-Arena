@@ -72,8 +72,8 @@ const gameServer = new Server({
 gameServer.define('auto_chess', AutoChessRoom);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', players: gameServer.presence.channels.size });
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' });
 });
 
 // Initialize database and start server
