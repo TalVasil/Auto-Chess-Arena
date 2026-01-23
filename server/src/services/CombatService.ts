@@ -1,4 +1,10 @@
-import { ICombatResult } from 'auto-chess-arena-shared';
+// ICombatResult interface for combat simulation
+interface ICombatResult {
+  winnerId: string | null;
+  loserId: string | null;
+  isDraw: boolean;
+  damageDealt: number;
+}
 
 /**
  * Combat Unit - Runtime state during combat simulation

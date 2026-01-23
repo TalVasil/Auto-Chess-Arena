@@ -11,7 +11,7 @@ export class AutoChessRoom extends Room<GameState> {
   maxClients = 8;
   private elapsedTime: number = 0; // Accumulator for timer countdown
   private timerPaused: boolean = false; // Debug flag to pause timer
-  private reconnectionPromises: Map<string, Promise<Client>> = new Map(); // Track reconnection promises by userId
+  private reconnectionPromises: Map<string, any> = new Map(); // Track reconnection promises by userId
   private recoverySessionMap = new Map<number, string>(); // userId → oldSessionId mapping for recovery
   private isRecoveryMode = false; // Flag to indicate we're in server restart recovery
   private savedMatchupsForRecovery: any[] = []; // Store original matchups during recovery
@@ -522,7 +522,7 @@ export class AutoChessRoom extends Room<GameState> {
       }
 
       const boardPos = player.board[posIndex];
-      if (!boardPos.character) {
+      if (!boardPos || !boardPos.character) {
         console.log(`⚠️ No character at position (${row}, ${col})`);
         return;
       }
@@ -534,15 +534,16 @@ export class AutoChessRoom extends Room<GameState> {
         return;
       }
 
+      const charToMove = boardPos.character;
       // Move character back to bench
       if (targetBenchIndex !== undefined && targetBenchIndex >= 0 && targetBenchIndex <= player.bench.length) {
         // Insert at specific position
-        player.bench.splice(targetBenchIndex, 0, boardPos.character);
-        console.log(`✅ Player ${player.username} moved ${boardPos.character.name} from board to bench[${targetBenchIndex}]`);
+        player.bench.splice(targetBenchIndex, 0, charToMove);
+        console.log(`✅ Player ${player.username} moved ${charToMove.name} from board to bench[${targetBenchIndex}]`);
       } else {
         // Append to end
-        player.bench.push(boardPos.character);
-        console.log(`✅ Player ${player.username} moved ${boardPos.character.name} from board to bench`);
+        player.bench.push(charToMove);
+        console.log(`✅ Player ${player.username} moved ${charToMove.name} from board to bench`);
       }
 
       // Remove from board
@@ -593,7 +594,7 @@ export class AutoChessRoom extends Room<GameState> {
       }
 
       const sourcePos = player.board[sourcePosIndex];
-      if (!sourcePos.character) {
+      if (!sourcePos || !sourcePos.character) {
         console.log(`⚠️ No character at source position (${fromRow}, ${fromCol})`);
         return;
       }
@@ -605,11 +606,12 @@ export class AutoChessRoom extends Room<GameState> {
         return;
       }
 
+      const charName = sourcePos.character.name;
       // Move character to new position
       sourcePos.row = toRow;
       sourcePos.col = toCol;
 
-      console.log(`✅ Player ${player.username} moved ${sourcePos.character.name} from (${fromRow}, ${fromCol}) to (${toRow}, ${toCol})`);
+      console.log(`✅ Player ${player.username} moved ${charName} from (${fromRow}, ${fromCol}) to (${toRow}, ${toCol})`);
     });
 
     // Swap two arena characters
@@ -694,7 +696,7 @@ export class AutoChessRoom extends Room<GameState> {
       }
 
       const arenaPos = player.board[arenaPosIndex];
-      if (!arenaPos.character) {
+      if (!arenaPos || !arenaPos.character) {
         console.log(`⚠️ No character at arena position (${row}, ${col})`);
         return;
       }
@@ -704,7 +706,7 @@ export class AutoChessRoom extends Room<GameState> {
 
       // Put bench char on arena
       arenaPos.character = benchChar;
-      arenaPos.character.currentHP = arenaPos.character.hp; // Reset HP
+      benchChar.currentHP = benchChar.hp; // Reset HP
 
       // Put arena char on bench
       player.bench[benchIndex] = arenaChar;
