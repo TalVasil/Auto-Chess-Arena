@@ -123,6 +123,45 @@
   color: #ffd700;
 }
 
+/* Stats Tooltip (shows on hover) - same style as Arena */
+.bench-stats-tooltip {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  white-space: nowrap;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.bench-slot:hover .bench-stats-tooltip {
+  display: flex;
+}
+
+.bench-stats-tooltip .stat-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.bench-stats-tooltip .stat-icon {
+  font-size: 12px;
+}
+
+.bench-stats-tooltip .stat-value {
+  color: #fff;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px #000;
+}
+
 .sell-indicator {
   position: absolute;
   top: 4px;

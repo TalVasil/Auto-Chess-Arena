@@ -6,6 +6,7 @@ export interface User {
   password: string;
   email: string;
   display_name: string;
+  can_edit: boolean;
   created_at: Date;
   last_login_at: Date;
 }

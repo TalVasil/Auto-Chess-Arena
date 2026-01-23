@@ -3,6 +3,7 @@ import { Box, Heading, Text, Badge, Button, Grid, VStack, HStack } from '@chakra
 import { useGameStore } from '../store/gameStore';
 import { gameClient } from '../network/GameClient';
 import { GamePlay } from './GamePlay';
+import { DebugControls } from './DebugControls';
 import styles from './GameLobby.module.css';
 
 export function GameLobby() {
@@ -86,16 +87,7 @@ export function GameLobby() {
               Auto Chess Arena - Lobby
             </Heading>
             <HStack spacing={2}>
-              <Button
-                variant="ghost"
-                color="yellow.400"
-                _hover={{ bg: 'rgba(255, 255, 0, 0.1)', color: 'yellow.300' }}
-                onClick={() => {
-                  gameClient.send('cancel_game');
-                }}
-              >
-                🏠 Cancel Game
-              </Button>
+              <DebugControls phase="WAITING" />
               <Button
                 variant="ghost"
                 color="red.400"

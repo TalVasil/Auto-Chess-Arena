@@ -1,4 +1,5 @@
 import React from 'react';
+import { Tooltip } from './Tooltip';
 import './Arena.css';
 
 const DEBUG_PARTICLES = false; // Toggle: true = particle logs, false = silent
@@ -102,7 +103,6 @@ export function Arena({ boardPositions, selectedArenaPos, onCellClick }: ArenaPr
             {position?.character && ((position.character.currentHP ?? position.character.hp ?? 0) > 0) && (
               <div
                 className="arena-character"
-                title={position.character.name}
                 data-char-id={position.character.id}
               >
                 <div className="character-emoji">{position.character.emoji}</div>

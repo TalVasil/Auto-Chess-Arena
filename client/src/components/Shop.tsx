@@ -2,6 +2,7 @@ import { ICharacter } from '../../../shared/src/types/game.types';
 import { Character } from '../store/gameStore';
 import { gameClient } from '../network/GameClient';
 import { XP_CONFIG, PLAYER_CONFIG } from '../../../shared/src/constants/gameConfig';
+import { Tooltip } from './Tooltip';
 import './Shop.css';
 
 interface ShopProps {
@@ -117,22 +118,28 @@ export function Shop({ characters, playerGold, playerLevel, phase, selectedBench
       )}
         <div className="shop-content">
         <div className="shop-sidebar">
-          <h2>🛒 Shop</h2>
+          <Tooltip text="Here you can buy characters!">
+            <h2>🛒 Shop</h2>
+          </Tooltip>
           <div className="shop-actions">
-            <button
-              className="shop-action-btn"
-              disabled={playerGold < 2}
-              onClick={handleReroll}
-            >
-              🔄 Reroll<br/>(2g)
-            </button>
-            <button
-              className="shop-action-btn"
-              disabled={playerGold < XP_CONFIG.XP_BUY_COST || playerLevel >= PLAYER_CONFIG.MAX_LEVEL}
-              onClick={handleBuyXP}
-            >
-              ⭐ Buy XP<br/>({XP_CONFIG.XP_BUY_COST}g)
-            </button>
+            <Tooltip text="Reroll to get a whole new shop!">
+              <button
+                className="shop-action-btn"
+                disabled={playerGold < 2}
+                onClick={handleReroll}
+              >
+                🔄 Reroll<br/>(2g)
+              </button>
+            </Tooltip>
+            <Tooltip text="You can buy 4 XP for 4 gold!">
+              <button
+                className="shop-action-btn"
+                disabled={playerGold < XP_CONFIG.XP_BUY_COST || playerLevel >= PLAYER_CONFIG.MAX_LEVEL}
+                onClick={handleBuyXP}
+              >
+                ⭐ Buy XP<br/>({XP_CONFIG.XP_BUY_COST}g)
+              </button>
+            </Tooltip>
           </div>
         </div>
 
@@ -142,13 +149,18 @@ export function Shop({ characters, playerGold, playerLevel, phase, selectedBench
           const canAfford = playerGold >= character.cost;
 
           return (
-            <div
+            <Tooltip
               key={character.id}
-              className={`character-card ${!canAfford ? 'disabled' : ''}`}
-              style={{
-                borderColor: getRarityColor(character.rarity),
-              }}
+              text={canAfford ? `Click to buy ${character.name} for ${character.cost}g` : `Not enough gold (need ${character.cost}g)`}
             >
+              <div
+                className={`character-card ${!canAfford ? 'disabled' : ''}`}
+                style={{
+                  borderColor: getRarityColor(character.rarity),
+                  cursor: canAfford ? 'pointer' : 'not-allowed',
+                }}
+                onClick={() => handleBuy(character)}
+              >
               <div className="character-info">
                 <div className="character-emoji" style={{ fontSize: '3rem', textAlign: 'center', padding: '0.5rem' }}>
                   {character.emoji}
@@ -161,13 +173,13 @@ export function Shop({ characters, playerGold, playerLevel, phase, selectedBench
                 </div>
 
                 <div className="character-stats">
-                  <span className="stat" title="Attack">
+                  <span className="stat">
                     ⚔️ {character.attack}
                   </span>
-                  <span className="stat" title="Defense">
+                  <span className="stat">
                     🛡️ {character.defense}
                   </span>
-                  <span className="stat" title="HP">
+                  <span className="stat">
                     ❤️ {character.hp}
                   </span>
                 </div>
@@ -184,14 +196,18 @@ export function Shop({ characters, playerGold, playerLevel, phase, selectedBench
 
                 <button
                   className={`buy-button ${!canAfford ? 'disabled' : ''}`}
-                  onClick={() => handleBuy(character)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleBuy(character);
+                  }}
                   disabled={!canAfford}
                 >
                   <span className="buy-cost">{character.cost}g</span>
                   <span className="buy-text">Buy</span>
                 </button>
               </div>
-            </div>
+              </div>
+            </Tooltip>
           );
         }) : <div style={{padding: '2rem', color: '#fff', textAlign: 'center'}}>No characters in shop</div>}
         </div>

@@ -8,6 +8,7 @@ export interface AuthResponse {
     userId: number;
     username: string;
     displayName: string;
+    canEdit?: boolean;
   };
   error?: string;
   message?: string;

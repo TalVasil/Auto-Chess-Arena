@@ -69,6 +69,7 @@ export function LoginScreen({ onSwitchToRegister, onForgotPassword }: LoginScree
         userId: response.user.userId,
         username: response.user.username,
         displayName: response.user.displayName,
+        canEdit: response.user.canEdit,
         token: response.token,
         refreshToken: response.refreshToken,
       });

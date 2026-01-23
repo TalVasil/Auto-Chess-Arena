@@ -4,6 +4,9 @@ import { useGameStore } from '../store/gameStore';
 import { Arena } from './Arena';
 import { Bench } from './Bench';
 import { Shop } from './Shop';
+import { Tooltip } from './Tooltip';
+import { DebugControls } from './DebugControls';
+import { Leaderboard } from './Leaderboard';
 import { gameClient } from '../network/GameClient';
 import { LEVEL_UP_XP, PLAYER_CONFIG } from '../../../shared/src/constants/gameConfig';
 
@@ -17,6 +20,9 @@ export function GamePlay() {
     myOpponentId,
     myOpponentName,
     allCharacters,
+    canEdit,
+    debugMode,
+    toggleDebugMode,
     logout,
     leaveGame
   } = useGameStore();
@@ -45,6 +51,21 @@ export function GamePlay() {
   // Note: Even if opponent is disconnected, their data should remain in players array
   // because server keeps disconnected players for 30min reconnection window
   const opponentPlayer = players.find((p) => p.id === myOpponentId);
+
+  // Keyboard shortcut for debug mode (Ctrl+Shift+D) - only for users with can_edit permission
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        if (canEdit) {
+          toggleDebugMode();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canEdit, toggleDebugMode]);
 
   // Debug logging for opponent data
   console.log('🔍 DEBUG - Combat Display:', {
@@ -423,11 +444,15 @@ export function GamePlay() {
       setCursorIcon(null);
     } else if (selectedBenchIndex !== null && !existingCharacter) {
       // Place character from bench to board
-      gameClient.send('place_character', {
-        benchIndex: selectedBenchIndex,
-        row,
-        col
-      });
+      // Guard: ensure character exists at bench index before sending
+      const benchChar = myPlayer?.bench[selectedBenchIndex];
+      if (benchChar) {
+        gameClient.send('place_character', {
+          benchIndex: selectedBenchIndex,
+          row,
+          col
+        });
+      }
       setSelectedBenchIndex(null);
       setCursorIcon(null);
     }
@@ -480,114 +505,84 @@ export function GamePlay() {
               ❤️ {myPlayer.hp}
             </Text>
           </Box>
-          <Box bg="rgba(138, 43, 226, 0.2)" px={3} py={2} borderRadius="md" border="1px solid #8a2be2">
-            <Text fontSize="sm" color="#8a2be2" fontWeight="bold">
-              ⭐ {myPlayer.level}
-            </Text>
-          </Box>
-          <Box bg="rgba(0, 191, 255, 0.2)" px={3} py={2} borderRadius="md" border="1px solid #00bfff">
-            <Text fontSize="sm" color="#00bfff" fontWeight="bold">
-              📊 XP: {myPlayer.xp}
-              {myPlayer.level < PLAYER_CONFIG.MAX_LEVEL ? (
-                <Text as="span" fontSize="xs" color="#88d8ff" ml={2}>
-                  ({(LEVEL_UP_XP as any)[myPlayer.level + 1] - myPlayer.xp} to lvl {myPlayer.level + 1})
-                </Text>
-              ) : (
-                <Text as="span" fontSize="xs" color="#88d8ff" ml={2}>
-                  (MAX)
-                </Text>
-              )}
-            </Text>
-          </Box>
+          <Tooltip text={`You are level ${myPlayer.level} - to get more characters level up!`}>
+            <Box
+              bg="rgba(138, 43, 226, 0.2)"
+              px={3}
+              py={2}
+              borderRadius="md"
+              border="1px solid #8a2be2"
+              cursor="help"
+            >
+              <Text fontSize="sm" color="#8a2be2" fontWeight="bold">
+                ⭐ {myPlayer.level}
+              </Text>
+            </Box>
+          </Tooltip>
+          <Tooltip text={myPlayer.level < PLAYER_CONFIG.MAX_LEVEL
+            ? `You have a total of ${myPlayer.xp} XP! Buy ${(LEVEL_UP_XP as any)[myPlayer.level + 1] - myPlayer.xp} XP to level up!`
+            : `You have a total of ${myPlayer.xp} XP! You are at max level!`}>
+            <Box
+              bg="rgba(0, 191, 255, 0.2)"
+              px={3}
+              py={2}
+              borderRadius="md"
+              border="1px solid #00bfff"
+              cursor="help"
+            >
+              <Text fontSize="sm" color="#00bfff" fontWeight="bold">
+                📊 XP: {myPlayer.xp}
+                {myPlayer.level < PLAYER_CONFIG.MAX_LEVEL ? (
+                  <Text as="span" fontSize="xs" color="#88d8ff" ml={2}>
+                    ({(LEVEL_UP_XP as any)[myPlayer.level + 1] - myPlayer.xp} to lvl {myPlayer.level + 1})
+                  </Text>
+                ) : (
+                  <Text as="span" fontSize="xs" color="#88d8ff" ml={2}>
+                    (MAX)
+                  </Text>
+                )}
+              </Text>
+            </Box>
+          </Tooltip>
         </HStack>
 
         {/* Game Phase Info */}
         <HStack gap={2}>
-          <Box bg="rgba(255, 255, 255, 0.1)" px={3} py={2} borderRadius="md">
-            <Text fontSize="sm" fontWeight="bold">
-              Round {roundNumber}
-            </Text>
-          </Box>
+          <Tooltip text={`Damage = Surviving Units × Round (${roundNumber}). If you lose, each enemy unit alive deals ${roundNumber} damage to you. Draw = 2 HP lost.`}>
+            <Box bg="rgba(255, 255, 255, 0.1)" px={3} py={2} borderRadius="md" cursor="help">
+              <Text fontSize="sm" fontWeight="bold">
+                Round {roundNumber}
+              </Text>
+            </Box>
+          </Tooltip>
           <Box bg="rgba(0, 212, 255, 0.2)" px={3} py={2} borderRadius="md" border="1px solid #00d4ff">
             <Text fontSize="sm" color="#00d4ff" fontWeight="bold">
               ⏱️ {timer}s
             </Text>
           </Box>
-          <Box
-            bg={phase === 'PREPARATION' ? 'rgba(0, 255, 0, 0.2)' : 'rgba(255, 0, 0, 0.2)'}
-            px={3}
-            py={2}
-            borderRadius="md"
-            border={`1px solid ${phase === 'PREPARATION' ? '#00ff00' : '#ff0000'}`}
-          >
-            <Text fontSize="sm" color={phase === 'PREPARATION' ? '#00ff00' : '#ff0000'} fontWeight="bold">
-              {phase}
-            </Text>
-          </Box>
+          <Tooltip text={phase === 'PREPARATION'
+            ? 'You are in preparation mode! Move your characters freely on the arena - put them at the best spot to fight better!'
+            : 'You are in combat mode! The fight will start automatically! You cannot make changes in the arena.'}>
+            <Box
+              bg={phase === 'PREPARATION' ? 'rgba(0, 255, 0, 0.2)' : 'rgba(255, 0, 0, 0.2)'}
+              px={3}
+              py={2}
+              borderRadius="md"
+              border={`1px solid ${phase === 'PREPARATION' ? '#00ff00' : '#ff0000'}`}
+              cursor="help"
+            >
+              <Text fontSize="sm" color={phase === 'PREPARATION' ? '#00ff00' : '#ff0000'} fontWeight="bold">
+                {phase}
+              </Text>
+            </Box>
+          </Tooltip>
         </HStack>
 
-        {/* Debug Controls - Horizontal */}
-        <HStack gap={1}>
-          <button
-            onClick={() => gameClient.send('debug_toggle_timer')}
-            style={{
-              background: 'rgba(255, 165, 0, 0.2)',
-              border: '1px solid #ffa500',
-              color: '#ffa500',
-              padding: '0.5rem 0.75rem',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '0.8rem'
-            }}
-          >
-            ⏯️
-          </button>
-          <button
-            onClick={() => gameClient.send('debug_next_round')}
-            style={{
-              background: 'rgba(0, 255, 127, 0.2)',
-              border: '1px solid #00ff7f',
-              color: '#00ff7f',
-              padding: '0.5rem 0.75rem',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '0.8rem'
-            }}
-          >
-            ⏭️
-          </button>
-          <button
-            onClick={() => gameClient.send('debug_reset_game')}
-            style={{
-              background: 'rgba(255, 0, 0, 0.2)',
-              border: '1px solid #ff0000',
-              color: '#ff0000',
-              padding: '0.5rem 0.75rem',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '0.8rem'
-            }}
-          >
-            🔄
-          </button>
-          <button
-            onClick={handleCancelGame}
-            style={{
-              background: 'rgba(255, 255, 0, 0.2)',
-              border: '1px solid #ffff00',
-              color: '#ffff00',
-              padding: '0.5rem 0.75rem',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '0.8rem'
-            }}
-          >
-            🏠
-          </button>
+        {/* Debug Controls and Logout */}
+        <HStack gap={2}>
+          {canEdit && debugMode && (
+            <DebugControls phase={phase as 'PREPARATION' | 'COMBAT'} onCancelGame={handleCancelGame} />
+          )}
           <button
             onClick={handleLogout}
             style={{
@@ -601,7 +596,7 @@ export function GamePlay() {
               fontSize: '0.8rem'
             }}
           >
-            🚪
+            🚪 Logout
           </button>
         </HStack>
       </HStack>
@@ -651,6 +646,38 @@ export function GamePlay() {
             _hover={{
               transform: 'translateY(-2px)',
               boxShadow: '0 8px 30px rgba(138, 43, 226, 0.6)',
+            }}
+          >
+            Back to Lobby
+          </Button>
+        </Box>
+      )}
+
+      {/* Winner Banner - Show when you're the last player standing */}
+      {!myPlayer.isEliminated && players.filter(p => !p.isEliminated).length === 1 && (
+        <Box
+          bg="rgba(255, 215, 0, 0.3)"
+          border="2px solid #ffd700"
+          borderRadius="lg"
+          px={6}
+          py={4}
+          maxW="1400px"
+          mx="auto"
+          mb={2}
+          textAlign="center"
+        >
+          <Text fontSize="xl" fontWeight="bold" color="#ffd700" mb={2}>
+            👑 You are the Champion! 👑
+          </Text>
+          <Button
+            bg="linear-gradient(135deg, #ffd700 0%, #ff8c00 100%)"
+            color="black"
+            onClick={leaveGame}
+            size="lg"
+            fontWeight="bold"
+            _hover={{
+              transform: 'translateY(-2px)',
+              boxShadow: '0 8px 30px rgba(255, 215, 0, 0.6)',
             }}
           >
             Back to Lobby
@@ -715,12 +742,19 @@ export function GamePlay() {
           </Box>
         )}
 
-        {/* Arena */}
-        <Arena
-          boardPositions={phase === 'COMBAT' ? getCombinedBoard() : (myPlayer.board || [])}
-          selectedArenaPos={selectedArenaPos}
-          onCellClick={handleArenaCellClick}
-        />
+        {/* Arena + Leaderboard - Arena centered, Leaderboard positioned absolutely */}
+        <Box position="relative" w="100%">
+          <Box display="flex" justifyContent="center">
+            <Arena
+              boardPositions={phase === 'COMBAT' ? getCombinedBoard() : (myPlayer.board || [])}
+              selectedArenaPos={selectedArenaPos}
+              onCellClick={handleArenaCellClick}
+            />
+          </Box>
+          <Box position="absolute" right="0" top="0" height="100%">
+            <Leaderboard players={players} mySessionId={mySessionId} />
+          </Box>
+        </Box>
 
         {/* Bench */}
         <Bench

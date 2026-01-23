@@ -1,5 +1,6 @@
 import { ICharacter } from '../../../shared/src/types/game.types';
 import { BENCH_CONFIG } from '../../../shared/src/constants/gameConfig';
+import { Tooltip } from './Tooltip';
 import './Bench.css';
 
 interface BenchProps {
@@ -39,7 +40,9 @@ export function Bench({ characters, playerGold, selectedBenchIndex, onSelectChar
   return (
     <div className="bench">
       <div className="bench-header">
-        <h3>📦 Bench</h3>
+        <Tooltip text="Here you can store your characters that are not fighting!">
+          <h3>📦 Bench</h3>
+        </Tooltip>
         <div className="bench-info">
           <span className="bench-count">
             {characters.filter(c => c !== null).length}/{BENCH_CONFIG.MAX_SLOTS}
@@ -69,13 +72,30 @@ export function Bench({ characters, playerGold, selectedBenchIndex, onSelectChar
                   <div className="slot-icon">{character.emoji}</div>
                   <div className="slot-name">{character.name}</div>
                   <div className="slot-stats">
-                    <span title="Cost">💰{character.cost}</span>
+                    <span>💰{character.cost}</span>
+                  </div>
+                </div>
+                {/* Stats Tooltip (shows on hover) - same as Arena */}
+                <div className="bench-stats-tooltip">
+                  <div className="stat-line">
+                    <span className="stat-icon">⚔️</span>
+                    <span className="stat-value">{character.attack ?? 10}</span>
+                  </div>
+                  <div className="stat-line">
+                    <span className="stat-icon">🛡️</span>
+                    <span className="stat-value">{character.defense ?? 5}</span>
+                  </div>
+                  <div className="stat-line">
+                    <span className="stat-icon">❤️</span>
+                    <span className="stat-value">{character.hp ?? 100}</span>
                   </div>
                 </div>
                 {onSellCharacter && (
-                  <div className="sell-indicator" title={`Right-click to sell for ${character.cost}g`}>
-                    💰
-                  </div>
+                  <Tooltip text={`Right-click to sell for ${character.cost}g`}>
+                    <div className="sell-indicator">
+                      💰
+                    </div>
+                  </Tooltip>
                 )}
               </>
             ) : (

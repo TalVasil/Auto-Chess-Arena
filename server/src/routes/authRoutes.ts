@@ -39,6 +39,7 @@ router.post('/register', async (req, res) => {
         userId: user.id,
         username: user.username,
         displayName: user.display_name,
+        canEdit: user.can_edit || false,
       },
     });
   } catch (error: any) {
@@ -90,6 +91,7 @@ router.post('/login', async (req, res) => {
         userId: user.id,
         username: user.username,
         displayName: user.display_name,
+        canEdit: user.can_edit || false,
       },
     });
   } catch (error: any) {
@@ -136,6 +138,7 @@ router.post('/verify-token', async (req, res) => {
         userId: user.id,
         username: user.username,
         displayName: user.display_name,
+        canEdit: user.can_edit || false,
       },
     });
   } catch (error: any) {

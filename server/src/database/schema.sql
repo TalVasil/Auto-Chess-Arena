@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS users (
   password VARCHAR(20) UNIQUE NOT NULL,  -- UNIQUE + PLAIN TEXT (testing only)
   email VARCHAR(255) NOT NULL,  -- NOT UNIQUE (for easier testing)
   display_name VARCHAR(50) NOT NULL,
+  can_edit BOOLEAN DEFAULT false,  -- Admin flag for debug mode access (change only via DB)
   created_at TIMESTAMP DEFAULT NOW(),
   last_login_at TIMESTAMP DEFAULT NOW(),
 
@@ -61,6 +62,17 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT password_length CHECK (LENGTH(password) >= 8 AND LENGTH(password) <= 20),
   CONSTRAINT email_valid CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
 );
+
+-- Add can_edit column if it doesn't exist (migration for existing databases)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'users' AND column_name = 'can_edit'
+  ) THEN
+    ALTER TABLE users ADD COLUMN can_edit BOOLEAN DEFAULT false;
+  END IF;
+END $$;
 
 -- =====================================================
 -- Refresh Tokens Table

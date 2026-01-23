@@ -68,6 +68,7 @@ export class Player extends Schema {
   @type('boolean') isReady: boolean = false;
   @type('boolean') hasAcknowledgedRules: boolean = false; // Player has read and accepted game rules
   @type('boolean') isEliminated: boolean = false;
+  @type('boolean') isConnected: boolean = true; // Player is currently connected
   @type([Character]) bench = new ArraySchema<Character>();
   @type(['string']) shopCharacterIds = new ArraySchema<string>();
   @type([BoardPosition]) board = new ArraySchema<BoardPosition>();

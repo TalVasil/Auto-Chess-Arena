@@ -302,12 +302,7 @@ export class AutoChessRoom extends Room<GameState> {
         return;
       }
 
-      // Only allow selling during PREPARATION phase
-      if (this.state.phase !== 'PREPARATION') {
-        client.send('error', { message: 'Can only sell characters during preparation phase' });
-        return;
-      }
-
+      // Allow selling during both PREPARATION and COMBAT phases
       const { benchIndex } = message;
 
       // Validate bench index
@@ -1222,11 +1217,14 @@ export class AutoChessRoom extends Room<GameState> {
     // If consented = true, player clicked "Logout" (intentional)
     // If consented = false, it was accidental (browser close, network error)
 
+    // Mark player as disconnected
+    player.isConnected = false;
+
     if (consented) {
-      // Intentional disconnect - remove player immediately
-      console.log(`🚪 ${playerName} left intentionally, removing from game`);
-      this.state.removePlayer(client.sessionId);
-      console.log(`👥 Total players: ${this.state.players.size}/8`);
+      // Intentional disconnect - mark as eliminated and disconnected (keep in leaderboard)
+      console.log(`🚪 ${playerName} left intentionally, marking as disconnected`);
+      player.isEliminated = true;
+      console.log(`👥 Total players: ${this.state.players.size}/8 (${playerName} disconnected)`);
     } else {
       // Accidental disconnect - keep player data for reconnection
       console.log(`⏳ ${playerName} disconnected accidentally, keeping data for reconnection`);
@@ -1319,6 +1317,9 @@ export class AutoChessRoom extends Room<GameState> {
       // Client reconnected successfully
       console.log(`✅ ${playerName} successfully reconnected`);
       this.reconnectionPromises.delete(String(player.userId));
+
+      // Mark player as connected again
+      player.isConnected = true;
 
       // Send combat matchups if in COMBAT phase
       if (this.state.phase === 'COMBAT' && this.state.currentMatchups.length > 0) {
@@ -1439,6 +1440,9 @@ export class AutoChessRoom extends Room<GameState> {
       console.log(`🔄 Auto-filling arena for ${player.username}: ${currentBoardCount}/${maxUnits} units, ${spotsToFill} spots available`);
 
       let filled = 0;
+      // Collect indices to remove (in reverse order to avoid index shifting issues)
+      const indicesToRemove: number[] = [];
+
       // Try to place bench characters on the arena
       for (let benchIndex = 0; benchIndex < player.bench.length && filled < spotsToFill; benchIndex++) {
         const character = player.bench[benchIndex];
@@ -1456,21 +1460,18 @@ export class AutoChessRoom extends Room<GameState> {
           // Add to board
           player.board.push(boardPos);
 
-          // Remove from bench (set to undefined instead of splice to maintain array structure)
-          player.bench[benchIndex] = undefined as any;
+          // Mark for removal
+          indicesToRemove.push(benchIndex);
 
           filled++;
           console.log(`✅ Auto-placed ${character.name} at (${emptyPosition.row}, ${emptyPosition.col}) for ${player.username}`);
         }
       }
 
-      // Clean up bench - remove undefined entries
-      const cleanBench = new ArraySchema<Character>();
-      player.bench.forEach((char) => {
-        if (char) cleanBench.push(char);
-      });
-      player.bench.clear();
-      cleanBench.forEach((char) => player.bench.push(char));
+      // Remove from bench in reverse order to maintain correct indices
+      for (let i = indicesToRemove.length - 1; i >= 0; i--) {
+        player.bench.splice(indicesToRemove[i], 1);
+      }
 
       if (filled > 0) {
         console.log(`✅ Auto-filled ${filled} characters for ${player.username}. Board now: ${player.board.length}/${maxUnits}`);

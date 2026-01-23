@@ -178,6 +178,7 @@ export function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps) {
         userId: response.user.userId,
         username: response.user.username,
         displayName: response.user.displayName,
+        canEdit: response.user.canEdit,
         token: response.token,
         refreshToken: undefined,
       });

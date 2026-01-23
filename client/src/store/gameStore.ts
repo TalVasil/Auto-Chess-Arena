@@ -37,6 +37,7 @@ export interface Player {
   level: number;
   isReady: boolean;
   isEliminated: boolean;
+  isConnected: boolean;
   bench: Character[];
   shopCharacterIds: string[];
   board: BoardPosition[];
@@ -49,6 +50,7 @@ export interface GameStoreState {
   userId: number | null;
   username: string | null;
   displayName: string | null;
+  canEdit: boolean;
   accessToken: string | null;
   refreshToken: string | null;
 
@@ -82,11 +84,16 @@ export interface GameStoreState {
   allCharacters: ICharacter[];
   isCharactersLoaded: boolean;
 
+  // Debug mode
+  debugMode: boolean;
+  toggleDebugMode: () => void;
+
   // Auth actions
   setAuth: (data: {
     userId: number;
     username: string;
     displayName: string;
+    canEdit?: boolean;
     token: string;
     refreshToken?: string;
   }) => void;
@@ -110,6 +117,7 @@ export const useGameStore = create<GameStoreState>()(
       userId: null,
       username: null,
       displayName: null,
+      canEdit: false,
       accessToken: null,
       refreshToken: null,
 
@@ -135,6 +143,14 @@ export const useGameStore = create<GameStoreState>()(
       // Characters
       allCharacters: [],
       isCharactersLoaded: false,
+
+      // Debug mode (default false, can be toggled with Ctrl+Shift+D)
+      debugMode: false,
+      toggleDebugMode: () => {
+        const newMode = !get().debugMode;
+        console.log(`🐛 Debug mode: ${newMode ? 'ON' : 'OFF'}`);
+        set({ debugMode: newMode });
+      },
 
       // Auth actions
       setAuth: (data) => {
@@ -170,6 +186,7 @@ export const useGameStore = create<GameStoreState>()(
           userId: data.userId,
           username: data.username,
           displayName: data.displayName,
+          canEdit: data.canEdit || false,
           accessToken: data.token,
           refreshToken: data.refreshToken || null,
         });
@@ -225,6 +242,7 @@ export const useGameStore = create<GameStoreState>()(
               userId: response.user.userId,
               username: response.user.username,
               displayName: response.user.displayName,
+              canEdit: response.user.canEdit || false,
               accessToken: response.token,
             });
             return true;
@@ -423,6 +441,7 @@ export const useGameStore = create<GameStoreState>()(
             level: player.level,
             isReady: player.isReady,
             isEliminated: player.isEliminated,
+            isConnected: player.isConnected ?? true,
             bench,
             shopCharacterIds,
             board,
