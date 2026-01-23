@@ -1,4 +1,4 @@
-import { ICharacter, CharacterRarity, AbilityEffect } from '../types/game.types';
+import { ICharacter, CharacterRarity, AbilityEffect } from '../../types/game.types';
 
 // =====================================================
 // DEPRECATED: This file is no longer used
