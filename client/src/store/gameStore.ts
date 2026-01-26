@@ -531,7 +531,8 @@ export const useGameStore = create<GameStoreState>()(
       // Load characters from API
       loadCharacters: async () => {
         try {
-          const response = await fetch('http://localhost:2567/api/characters');
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:2567';
+          const response = await fetch(`${apiUrl}/api/characters`);
           const data = await response.json();
           set({
             allCharacters: data.characters,
