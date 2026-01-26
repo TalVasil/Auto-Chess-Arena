@@ -1,4 +1,5 @@
-const API_URL = 'http://localhost:2567/api/auth';
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:2567';
+const API_URL = `${BASE_URL}/api/auth`;
 
 export interface AuthResponse {
   success: boolean;
