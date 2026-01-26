@@ -55,11 +55,9 @@ export function GamePlay() {
   // Keyboard shortcut for debug mode (Ctrl+Shift+D) - only for users with can_edit permission
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+      if (e.ctrlKey && e.shiftKey && e.key === 'D' && canEdit) {
         e.preventDefault();
-        if (canEdit) {
-          toggleDebugMode();
-        }
+        toggleDebugMode();
       }
     };
 

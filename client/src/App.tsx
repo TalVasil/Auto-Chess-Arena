@@ -8,24 +8,10 @@ import './styles/App.css';
 function App() {
   const loadCharacters = useGameStore(state => state.loadCharacters);
   const isCharactersLoaded = useGameStore(state => state.isCharactersLoaded);
-  const toggleDebugMode = useGameStore(state => state.toggleDebugMode);
 
   useEffect(() => {
     loadCharacters();
   }, [loadCharacters]);
-
-  // Keyboard shortcut: Ctrl+Shift+D to toggle debug mode
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-        e.preventDefault();
-        toggleDebugMode();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleDebugMode]);
 
   if (!isCharactersLoaded) {
     return (
