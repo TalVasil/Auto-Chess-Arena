@@ -1,4 +1,4 @@
-import { query } from '../database/db.js';
+import { query } from '../database/Db.js';
 import { GameState } from '../schema/GameState.js';
 
 /**

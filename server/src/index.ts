@@ -6,8 +6,8 @@ import { createServer } from 'http';
 import express from 'express';
 import cors from 'cors';
 import { AutoChessRoom } from './rooms/AutoChessRoom.js';
-import { initializeDatabase, closeDatabase } from './database/db.js';
-import authRoutes from './routes/authRoutes.js';
+import { initializeDatabase, closeDatabase } from './database/Db.js';
+import authRoutes from './routes/AuthRoutes.js';
 import { userRepository } from './database/UserRepository.js';
 import { characterService } from './services/CharacterService.js';
 
