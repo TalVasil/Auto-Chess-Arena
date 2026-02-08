@@ -9,6 +9,16 @@ A real-time multiplayer auto-battler game supporting up to 8 concurrent players.
 ![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat&logo=redis&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
 
+## Screenshots
+
+| Gameplay | Lobby |
+|----------|-------|
+| ![Gameplay](docs/screenshots/gameplay.jpg) | ![Lobby](docs/screenshots/lobby.jpg) |
+
+| Battle Won | Game Winner |
+|------------|-------------|
+| ![Battle Won](docs/screenshots/battle-won.jpg) | ![Game Win](docs/screenshots/game-win.jpg) |
+
 ## Features
 
 - **Real-time Multiplayer** - 8 players compete simultaneously with WebSocket synchronization
