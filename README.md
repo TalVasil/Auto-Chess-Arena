@@ -116,8 +116,8 @@ Game state is snapshotted to PostgreSQL every 5 seconds. If the server restarts,
 
 ## Documentation
 
-- [QUICKSTART.md](./QUICKSTART.md) - Detailed setup instructions
-- [GAME_OVERVIEW.md](./GAME_OVERVIEW.md) - Game design and mechanics
+- [SETUP.md](./SETUP.md) - Detailed setup instructions
+- [GAME_DESIGN.md](./GAME_DESIGN.md) - Game design and mechanics
 
 ## Scripts
 
