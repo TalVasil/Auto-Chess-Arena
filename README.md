@@ -15,9 +15,9 @@ A real-time multiplayer auto-battler game supporting up to 8 concurrent players.
 |----------|-------|
 | ![Gameplay](docs/screenshots/gameplay.jpg) | ![Lobby](docs/screenshots/lobby.jpg) |
 
-| Battle Won | Game Winner |
-|------------|-------------|
-| ![Battle Won](docs/screenshots/battle-won.jpg) | ![Game Win](docs/screenshots/game-win.jpg) |
+| Late Game Combat | Elimination |
+|-----------------|-------------|
+| ![Late Game](docs/screenshots/battle-lv5.jpg) | ![Elimination](docs/screenshots/elimination.jpg) |
 
 ## Features
 
